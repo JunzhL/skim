@@ -28,6 +28,7 @@ const skill = {
 const conflict = {
   skillAId: "package-manager-policy",
   skillBId: "npm-workflow",
+  analysis: { provider: "openai" as const, model: "gpt-5.6-terra" },
   commonScenario: "Adding a JavaScript dependency",
   confidence: 0.95,
   explanation: "The package managers and lockfiles differ.",
