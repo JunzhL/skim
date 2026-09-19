@@ -2,13 +2,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { agentRunSchema, type AgentConfig, type SkillRecord } from "@/lib/contracts";
-import {
-  createBuilderAgent,
-  createReviewerAgent,
-  DemoAgentConfigurationError,
-  type InterceptedCommand,
-  type RegistrySnapshot,
-} from "@/lib/agents";
+import { createBuilderAgent, createReviewerAgent, type InterceptedCommand, type RegistrySnapshot } from "@/lib/agents";
 
 const commitA = "a".repeat(40);
 const commitB = "b".repeat(40);
@@ -23,7 +17,12 @@ function skill(id: "package-manager-policy" | "npm-workflow"): SkillRecord {
     path: `skills/${id}`,
     source: { type: "builtin", name: id },
     files: [{ path: `skills/${id}/SKILL.md`, hash }],
-    scopes: { tasks: ["dependency-addition"], fileGlobs: ["package.json"] },
+    scopes: { tasks: ["dependency-management"], fileGlobs: ["package.json"] },
+    workflows: [
+      id === "package-manager-policy"
+        ? { task: "dependency-management", executable: "pnpm", arguments: ["add"], lockfile: "pnpm-lock.yaml" }
+        : { task: "dependency-management", executable: "npm", arguments: ["install"], lockfile: "package-lock.json" },
+    ],
     enabled: true,
   };
 }

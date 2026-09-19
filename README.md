@@ -1,6 +1,6 @@
 # skim
 
-Skill Manager is a developer tool for managing shared agent skills with explicit configuration, provenance, and safe change history. Issues #2 and #3 establish the TypeScript application foundation, the typed contracts, pinned Git skill imports, and the versioned registry. Conflict analysis, install transactions, Undo, and agent execution are intentionally not implemented yet.
+Skill Manager is a developer tool for managing shared agent skills with explicit configuration, provenance, and safe change history. Issues #2 to #5 establish the TypeScript application foundation, the typed contracts, pinned Git skill imports, the versioned registry, two reloadable demo agents, and deterministic structural validation with conflict-candidate detection. Semantic conflict reports, install transactions, Undo, and the dashboard are intentionally not implemented yet.
 
 ## Prerequisites
 
@@ -141,9 +141,22 @@ scopes:
 ---
 ```
 
-`name` and `description` are required. `license` and `scopes` are optional; scopes default to empty lists.
-Unknown keys are preserved by the parser and ignored. A license identifier detected from a `LICENSE`,
-`COPYING`, or `NOTICE` file in the skill directory takes precedence over the declared `license` value.
+`name` and `description` are required. `license`, `scopes`, `dependencies`, and `workflows` are optional and
+default to empty. Unknown keys are preserved by the parser and ignored. A license identifier detected from a
+`LICENSE`, `COPYING`, or `NOTICE` file in the skill directory takes precedence over the declared `license`
+value.
+
+`scopes` narrows conflict analysis, `dependencies` lists other skill identifiers this skill needs, and
+`workflows` declares the command a demo agent runs for a task:
+
+```yaml
+dependencies: [package-manager-policy]
+workflows:
+  - task: dependency-management
+    executable: pnpm
+    arguments: [add]
+    lockfile: pnpm-lock.yaml
+```
 
 ### Pinned no-conflict fixture
 
@@ -168,9 +181,51 @@ a skill's Git source survives across reads, since a copied directory cannot desc
 records, hashes, and enabled state are always recomputed from the committed tree, so the file can never drift
 from the files it describes.
 
+## Demo agents
+
+Two demo agents, `builder` and `reviewer`, come from `agents.yaml` in the managed repository. Each one loads a
+registry snapshot and stays on that configuration version until it is explicitly reloaded, so a new commit
+changes nothing until `reload()` runs. There is no hot reload.
+
+An agent resolves its command from committed skill content, not from a table inside the application: among the
+skills that are both enabled in the registry and enabled in that agent's assignments, exactly one may declare a
+`workflows` entry for the task. Multiple active declarations are reported as
+`AMBIGUOUS_PACKAGE_MANAGER_POLICY` regardless of assignment priority, and no declared workflow at all is
+reported as `NO_PACKAGE_MANAGER_POLICY`. Importing a skill that declares its own workflow is therefore enough
+to change agent behaviour.
+
+Each run happens in a fresh temporary workspace seeded with a `package.json`, outside the managed repository.
+The package-manager call is handed to an interceptor instead of being spawned, so nothing is downloaded or
+installed: the interceptor records the command and writes the expected lockfile itself. Every run returns an
+`AgentRun` with the agent ID, task, selected command, expected lockfile, configuration version, and timestamp.
+
+With Package Manager Policy active, `add zod` resolves to `pnpm add zod` and `pnpm-lock.yaml`. With NPM
+Workflow active, the same task resolves to `npm install zod` and `package-lock.json`.
+
+## Deterministic validation and conflict candidates
+
+`validateSkillSet` in `src/lib/validation/` runs the cheap structural checks that must pass before any model is
+consulted. Blocking errors are `DUPLICATE_SKILL_ID`, `DUPLICATE_SKILL_NAME`, `DUPLICATE_SKILL_PATH`,
+`DUPLICATE_FILE_DESTINATION`, `MISSING_DEPENDENCY`, `UNKNOWN_ASSIGNMENT`, and `INVALID_METADATA`. Errors and
+candidates are sorted, so repeated runs on the same input produce byte-identical results.
+
+Separately, it pairs skills whose declared scopes overlap into non-blocking conflict candidates. Task ids are
+trimmed, lowercased, and deduplicated; file globs are normalised and compared by equality or by one pattern
+matching the other as a literal path. Two globs that overlap only through wildcard intersection, such as
+`a*.json` and `*b.json`, are not treated as overlapping.
+
+`conflictAnalysisRequests` is the gate into semantic analysis: it returns nothing when any structural error is
+present and nothing when no scopes overlap, so a model adapter is never reached in either case. The authored
+pnpm and npm skills produce exactly one candidate over the shared `dependency-management` task, and the pinned
+`algorithmic-art` fixture declares no scopes, so it never becomes a package-manager candidate.
+
 ## Reserved API contracts
 
-`GET /api/registry` is implemented and returns the registry at the managed repository HEAD.
+Implemented:
+
+- `GET /api/registry` returns the registry at the managed repository HEAD.
+- `POST /api/agents/:id/reload` loads the current HEAD into that agent.
+- `POST /api/agents/:id/run` runs a dependency-addition task and returns the `AgentRun`.
 
 Issue #2 defines typed Zod request/response schemas without route handlers for:
 

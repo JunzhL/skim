@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { setupDemoRepository } from "@/lib/demo-setup";
+import { parseSkillFrontmatter } from "@/lib/skills/frontmatter";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -27,7 +28,13 @@ describe("demo setup", () => {
     const result = setupDemoRepository(destination, { appRoot: process.cwd() });
     expect(result).toBe(join(realpathSync(root), "demo"));
     expect(readFileSync(join(destination, "skills/package-manager-policy/SKILL.md"), "utf8")).toContain("use `pnpm add` and keep `pnpm-lock.yaml` updated.");
-    expect(readFileSync(join(destination, "skills/package-manager-policy/SKILL.md"), "utf8")).toMatch(/^---\nname: package-manager-policy\ndescription: .+\n---\n/);
+    const skill = readFileSync(join(destination, "skills/package-manager-policy/SKILL.md"), "utf8");
+    expect(skill).toMatch(/^---\nname: package-manager-policy\ndescription: .+\n/);
+    expect(parseSkillFrontmatter(skill, "SKILL.md")).toMatchObject({
+      name: "package-manager-policy",
+      scopes: { tasks: ["dependency-management"], fileGlobs: ["package.json", "pnpm-lock.yaml"] },
+      workflows: [{ task: "dependency-management", executable: "pnpm", arguments: ["add"], lockfile: "pnpm-lock.yaml" }],
+    });
     const agents = readFileSync(join(destination, "agents.yaml"), "utf8");
     expect(agents.match(/skillId: package-manager-policy/g)).toHaveLength(2);
     expect(agents.match(/enabled: true/g)).toHaveLength(2);

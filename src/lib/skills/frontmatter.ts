@@ -1,6 +1,6 @@
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import { identifierSchema } from "../contracts";
+import { identifierSchema, skillWorkflowSchema } from "../contracts";
 import { SkimError } from "../errors";
 
 const scopesSchema = z
@@ -15,6 +15,8 @@ const frontmatterSchema = z.looseObject({
   description: z.string().min(1),
   license: z.string().min(1).optional(),
   scopes: scopesSchema,
+  dependencies: z.array(identifierSchema).default([]),
+  workflows: z.array(skillWorkflowSchema).default([]),
 });
 
 export type SkillFrontmatter = z.infer<typeof frontmatterSchema>;
