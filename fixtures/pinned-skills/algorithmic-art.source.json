@@ -1,0 +1,15 @@
+{
+  "url": "https://github.com/anthropics/skills",
+  "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+  "subdirectory": "skills/algorithmic-art",
+  "slug": "algorithmic-art",
+  "license": "Apache-2.0",
+  "licenseFiles": ["LICENSE.txt"],
+  "vendoredAt": "fixtures/pinned-skills/algorithmic-art",
+  "files": [
+    { "path": "LICENSE.txt", "hash": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362" },
+    { "path": "SKILL.md", "hash": "3bc4092c09804853186524c826bc0621b940bb6122c05b84496dff95388e6eef" },
+    { "path": "templates/generator_template.js", "hash": "9ee0f1da52ef8f7bbfde1917123654880890d43f2d388642d71eab6dd78f94c4" },
+    { "path": "templates/viewer.html", "hash": "86c79d7ce97d2599ebe4bd9b97fdeb7295c9d3ed61ceeb513cbe1b2bb5d1ce29" }
+  ]
+}

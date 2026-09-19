@@ -12,6 +12,7 @@ export const gitProvenanceSchema = z.object({
   commit: commitSchema,
   subdirectory: relativePosixPathSchema,
   license: z.string().min(1),
+  licenseFiles: z.array(relativePosixPathSchema).optional(),
 });
 
 export const skillSourceSchema = z.discriminatedUnion("type", [builtinSourceSchema, gitProvenanceSchema]);

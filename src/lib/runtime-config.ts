@@ -46,7 +46,7 @@ export function validateRuntimeConfig(
   }
 
   const repoPath = realpathSync(requestedPath);
-  const appInput = realpathSync(options.appRoot ?? process.cwd());
+  const appInput = realpathSync(/*turbopackIgnore: true*/ options.appRoot ?? process.cwd());
   const appRoot = gitRoot(appInput);
   if (appRoot && isSameOrDescendant(repoPath, appRoot)) {
     throw new Error("SKIM_REPO_PATH must not be the application repository or one of its descendants");

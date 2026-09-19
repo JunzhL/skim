@@ -30,3 +30,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# The user-global ignore file excludes lib/; src/lib is first-party application source.
+!src/lib/
