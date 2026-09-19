@@ -77,9 +77,17 @@ export const conflictEvidenceSchema = z.object({
   quote: z.string().min(1),
 }).refine((value) => value.lineEnd >= value.lineStart, { message: "lineEnd must be >= lineStart", path: ["lineEnd"] });
 
+export const conflictModelProviderSchema = z.enum(["openai", "deepseek"]);
+
+export const conflictAnalysisMetadataSchema = z.object({
+  provider: conflictModelProviderSchema,
+  model: z.string().min(1),
+});
+
 export const conflictReportSchema = z.object({
   skillAId: identifierSchema,
   skillBId: identifierSchema,
+  analysis: conflictAnalysisMetadataSchema,
   commonScenario: z.string().min(1),
   confidence: z.number().min(0).max(1),
   explanation: z.string().min(1),
@@ -141,6 +149,8 @@ export type SkillWorkflow = z.infer<typeof skillWorkflowSchema>;
 export type SkillRecord = z.infer<typeof skillRecordSchema>;
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 export type AgentsFile = z.infer<typeof agentsFileSchema>;
+export type ConflictModelProvider = z.infer<typeof conflictModelProviderSchema>;
+export type ConflictAnalysisMetadata = z.infer<typeof conflictAnalysisMetadataSchema>;
 export type ConflictReport = z.infer<typeof conflictReportSchema>;
 export type InstallResolution = z.infer<typeof installResolutionSchema>;
 export type PreviewResolution = z.infer<typeof previewResolutionSchema>;

@@ -3,19 +3,37 @@ import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
 
+const optionalSecretSchema = z.string().optional().transform((value) => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+});
+
+function modelSchema(environmentName: string, fallback: string) {
+  return z
+    .string()
+    .optional()
+    .default(fallback)
+    .refine((value) => value.trim().length > 0, `${environmentName} cannot be blank`);
+}
+
 const rawRuntimeConfigSchema = z.object({
   SKIM_REPO_PATH: z.string().min(1, "SKIM_REPO_PATH is required"),
-  OPENAI_API_KEY: z.string().optional().transform((value) => {
-    const trimmed = value?.trim();
-    return trimmed ? trimmed : undefined;
-  }),
-  OPENAI_MODEL: z.string().optional().default("gpt-5.6-terra").refine((value) => value.trim().length > 0, "OPENAI_MODEL cannot be blank"),
+  CONFLICT_MODEL_PROVIDER: z.enum(["openai", "deepseek"]).optional().default("openai"),
+  OPENAI_API_KEY: optionalSecretSchema,
+  OPENAI_MODEL: modelSchema("OPENAI_MODEL", "gpt-5.6-terra"),
+  DEEPSEEK_API_KEY: optionalSecretSchema,
+  DEEPSEEK_MODEL: modelSchema("DEEPSEEK_MODEL", "deepseek-flash"),
 });
+
+export type ConflictModelProvider = "openai" | "deepseek";
 
 export type RuntimeConfig = {
   repoPath: string;
+  conflictModelProvider: ConflictModelProvider;
   openaiApiKey?: string;
   openaiModel: string;
+  deepseekApiKey?: string;
+  deepseekModel: string;
 };
 
 function gitRoot(path: string): string | undefined {
@@ -59,7 +77,10 @@ export function validateRuntimeConfig(
 
   return {
     repoPath,
+    conflictModelProvider: raw.CONFLICT_MODEL_PROVIDER,
     openaiApiKey: raw.OPENAI_API_KEY,
     openaiModel: raw.OPENAI_MODEL.trim(),
+    deepseekApiKey: raw.DEEPSEEK_API_KEY,
+    deepseekModel: raw.DEEPSEEK_MODEL.trim(),
   };
 }

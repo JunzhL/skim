@@ -47,25 +47,53 @@ describe("runtime configuration", () => {
     expect(() => validateRuntimeConfig({ SKIM_REPO_PATH: child }, { appRoot: app })).toThrow(/application repository/);
   });
 
-  it("accepts an independent repository and optional API key", () => {
+  it("accepts both provider credentials and defaults to OpenAI", () => {
     const root = tempRoot();
     const app = join(root, "app");
     const target = join(root, "target");
     gitRepo(app);
     gitRepo(target);
-    const parsed = validateRuntimeConfig({ SKIM_REPO_PATH: target, OPENAI_API_KEY: "", OPENAI_MODEL: undefined }, { appRoot: app });
+    const parsed = validateRuntimeConfig(
+      {
+        SKIM_REPO_PATH: target,
+        OPENAI_API_KEY: " openai-secret ",
+        DEEPSEEK_API_KEY: " deepseek-secret ",
+      },
+      { appRoot: app },
+    );
     expect(parsed.repoPath).toBe(realpathSync(target));
-    expect(parsed.openaiApiKey).toBeUndefined();
+    expect(parsed.conflictModelProvider).toBe("openai");
+    expect(parsed.openaiApiKey).toBe("openai-secret");
     expect(parsed.openaiModel).toBe("gpt-5.6-terra");
-    expect(validateRuntimeConfig({ SKIM_REPO_PATH: target, OPENAI_API_KEY: "secret" }, { appRoot: app }).openaiApiKey).toBe("secret");
+    expect(parsed.deepseekApiKey).toBe("deepseek-secret");
+    expect(parsed.deepseekModel).toBe("deepseek-flash");
   });
 
-  it("rejects a blank model name", () => {
+  it("allows an explicit DeepSeek selection without requiring either key at startup", () => {
     const root = tempRoot();
     const app = join(root, "app");
     const target = join(root, "target");
     gitRepo(app);
     gitRepo(target);
+    const parsed = validateRuntimeConfig(
+      { SKIM_REPO_PATH: target, CONFLICT_MODEL_PROVIDER: "deepseek" },
+      { appRoot: app },
+    );
+    expect(parsed.conflictModelProvider).toBe("deepseek");
+    expect(parsed.openaiApiKey).toBeUndefined();
+    expect(parsed.deepseekApiKey).toBeUndefined();
+  });
+
+  it("rejects invalid providers and blank model names", () => {
+    const root = tempRoot();
+    const app = join(root, "app");
+    const target = join(root, "target");
+    gitRepo(app);
+    gitRepo(target);
+    expect(() =>
+      validateRuntimeConfig({ SKIM_REPO_PATH: target, CONFLICT_MODEL_PROVIDER: "other" }, { appRoot: app }),
+    ).toThrow();
     expect(() => validateRuntimeConfig({ SKIM_REPO_PATH: target, OPENAI_MODEL: "   " }, { appRoot: app })).toThrow(/OPENAI_MODEL/);
+    expect(() => validateRuntimeConfig({ SKIM_REPO_PATH: target, DEEPSEEK_MODEL: "   " }, { appRoot: app })).toThrow(/DEEPSEEK_MODEL/);
   });
 });
