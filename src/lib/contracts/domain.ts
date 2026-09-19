@@ -99,9 +99,15 @@ export const previewResolutionSchema = z.union([installResolutionSchema, z.liter
 
 export const installPreviewSchema = z.object({
   previewId: identifierSchema,
+  transactionId: identifierSchema,
   baseCommit: commitSchema,
   incomingSkill: skillRecordSchema,
   unifiedDiff: z.string(),
+  resolutionDiffs: z
+    .object({
+      "keep-existing": z.string(),
+      "activate-incoming": z.string(),
+    }),
   conflicts: z.array(conflictReportSchema),
   allowedResolutions: z.array(previewResolutionSchema).min(1),
   createdAt: utcTimestampSchema,
@@ -155,5 +161,6 @@ export type ConflictReport = z.infer<typeof conflictReportSchema>;
 export type InstallResolution = z.infer<typeof installResolutionSchema>;
 export type PreviewResolution = z.infer<typeof previewResolutionSchema>;
 export type InstallPreview = z.infer<typeof installPreviewSchema>;
+export type InstallTransactionRecord = z.infer<typeof installTransactionRecordSchema>;
 export type TransactionRecord = z.infer<typeof transactionRecordSchema>;
 export type AgentRun = z.infer<typeof agentRunSchema>;
