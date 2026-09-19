@@ -226,6 +226,26 @@ describe("provider response boundaries", () => {
     await expect(malformed.analyze({ prompt: "x" })).rejects.toMatchObject({ code: "MODEL_PROVIDER_MALFORMED_RESPONSE" });
   });
 
+  it.each([
+    ["content_filter", "MODEL_PROVIDER_REFUSAL"],
+    ["length", "MODEL_PROVIDER_TRANSPORT_ERROR"],
+    ["tool_calls", "MODEL_PROVIDER_TRANSPORT_ERROR"],
+    ["insufficient_system_resource", "MODEL_PROVIDER_TRANSPORT_ERROR"],
+    ["aborted", "MODEL_PROVIDER_TRANSPORT_ERROR"],
+  ])("rejects DeepSeek finish reason %s", async (finishReason, code) => {
+    const adapter = createDeepSeekConflictAdapter("key", "model", {
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ finish_reason: finishReason, message: { content: JSON.stringify(rawConflict) } }],
+          }),
+          { status: 200 },
+        ),
+    });
+
+    await expect(adapter.analyze({ prompt: "x" })).rejects.toMatchObject({ code });
+  });
+
   it("reports timeout and transport errors without converting them into fallback calls", async () => {
     const timeoutFetch = vi.fn(
       (_input: string | URL | Request, init?: RequestInit) =>

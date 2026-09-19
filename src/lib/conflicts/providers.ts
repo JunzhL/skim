@@ -197,20 +197,29 @@ function extractDeepSeekOutput(payload: unknown): unknown {
   const choices = body && Array.isArray(body.choices) ? body.choices : [];
   const choice = asRecord(choices[0]);
   const message = choice ? asRecord(choice.message) : undefined;
+  const finishReason = choice?.finish_reason;
 
-  if (choice?.finish_reason === "content_filter") {
+  if (finishReason === "content_filter") {
     throw new SkimError(
       "MODEL_PROVIDER_REFUSAL",
       "DeepSeek refused or filtered the conflict-analysis request",
-      { provider: "deepseek", finishReason: choice.finish_reason },
+      { provider: "deepseek", finishReason },
     );
   }
 
-  if (!message || typeof message.content !== "string") {
+  if (!message || typeof message.content !== "string" || typeof finishReason !== "string") {
     throw new SkimError(
       "MODEL_PROVIDER_MALFORMED_RESPONSE",
       "DeepSeek returned an invalid Chat Completions envelope",
       { provider: "deepseek" },
+    );
+  }
+
+  if (finishReason !== "stop") {
+    throw new SkimError(
+      "MODEL_PROVIDER_TRANSPORT_ERROR",
+      `DeepSeek response ended with finish reason ${finishReason}`,
+      { provider: "deepseek", finishReason },
     );
   }
 
