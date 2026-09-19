@@ -6,8 +6,10 @@ import {
   gitProvenanceSchema,
   installPreviewSchema,
   installResolutionSchema,
+  installTransactionRecordSchema,
   skillRecordSchema,
   transactionRecordSchema,
+  undoTransactionRecordSchema,
 } from "./domain";
 
 export const getRegistryResponseSchema = z.object({
@@ -25,7 +27,7 @@ export const installTransactionRequestSchema = z.object({
   previewId: identifierSchema,
   resolution: installResolutionSchema,
 });
-export const installTransactionResponseSchema = transactionRecordSchema;
+export const installTransactionResponseSchema = installTransactionRecordSchema;
 
 export const undoConflictSchema = z.object({
   type: z.literal("conflict"),
@@ -34,7 +36,7 @@ export const undoConflictSchema = z.object({
   paths: z.array(relativePosixPathSchema).min(1),
 });
 export const undoTransactionResponseSchema = z.union([
-  z.object({ type: z.literal("committed"), transaction: transactionRecordSchema }),
+  z.object({ type: z.literal("committed"), transaction: undoTransactionRecordSchema }),
   undoConflictSchema,
 ]);
 

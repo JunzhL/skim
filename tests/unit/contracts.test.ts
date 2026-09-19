@@ -4,8 +4,11 @@ import {
   agentRunSchema,
   conflictReportSchema,
   installPreviewSchema,
+  installTransactionRequestSchema,
+  installTransactionResponseSchema,
   skillRecordSchema,
   transactionRecordSchema,
+  undoTransactionResponseSchema,
 } from "@/lib/contracts";
 
 const commit = "a".repeat(40);
@@ -41,6 +44,7 @@ describe("domain contracts", () => {
     expect(conflictReportSchema.parse(conflict)).toBeTruthy();
     expect(installPreviewSchema.parse({ previewId: "preview-1", baseCommit: commit, incomingSkill: skill, unifiedDiff: "diff", conflicts: [conflict], allowedResolutions: ["keep-existing", "activate-incoming", "cancel"], createdAt: timestamp })).toBeTruthy();
     expect(transactionRecordSchema.parse({ transactionId: "tx-1", type: "install", resolution: "activate-incoming", beforeCommit: commit, afterCommit: "c".repeat(40), affectedPathHashes: [{ path: "agents.yaml", beforeHash: hash, afterHash: "d".repeat(64) }], createdAt: timestamp })).toBeTruthy();
+    expect(transactionRecordSchema.parse({ transactionId: "tx-2", type: "undo", originalTransactionId: "tx-1", beforeCommit: "c".repeat(40), afterCommit: "d".repeat(40), affectedPathHashes: [{ path: "agents.yaml", beforeHash: hash, afterHash: null }], createdAt: timestamp })).toBeTruthy();
     expect(agentRunSchema.parse({ runId: "run-1", agentId: "builder", task: "add zod", configurationCommit: commit, interceptedExecutable: "pnpm", interceptedArguments: ["add", "zod"], expectedLockfile: "pnpm-lock.yaml", status: "completed", timestamp })).toBeTruthy();
   });
 
@@ -61,5 +65,21 @@ describe("domain contracts", () => {
     expect(installPreviewSchema.safeParse({ previewId: "preview-1", baseCommit: commit, incomingSkill: skill, unifiedDiff: "", conflicts: [], allowedResolutions: ["overwrite"], createdAt: "yesterday" }).success).toBe(false);
     const duplicate = { id: "builder", name: "Builder", skills: [] };
     expect(agentsFileSchema.safeParse({ schemaVersion: 1, agents: [duplicate, duplicate] }).success).toBe(false);
+  });
+
+  it("rejects transaction fields that do not match the transaction type", () => {
+    const base = { transactionId: "tx-1", beforeCommit: commit, afterCommit: "c".repeat(40), affectedPathHashes: [], createdAt: timestamp };
+    const install = { ...base, type: "install" as const, resolution: "keep-existing" as const };
+    const undo = { ...base, type: "undo" as const, originalTransactionId: "tx-0" };
+    expect(transactionRecordSchema.safeParse({ ...base, type: "install", resolution: "cancel" }).success).toBe(false);
+    expect(transactionRecordSchema.safeParse({ ...base, type: "install", resolution: "keep-existing", originalTransactionId: "tx-0" }).success).toBe(false);
+    expect(transactionRecordSchema.safeParse({ ...base, type: "undo" }).success).toBe(false);
+    expect(transactionRecordSchema.safeParse({ ...base, type: "undo", originalTransactionId: "tx-0", resolution: "keep-existing" }).success).toBe(false);
+    expect(installTransactionRequestSchema.safeParse({ previewId: "preview-1", resolution: "cancel" }).success).toBe(false);
+    expect(installTransactionRequestSchema.safeParse({ previewId: "preview-1", resolution: "activate-incoming" }).success).toBe(true);
+    expect(installTransactionResponseSchema.safeParse(install).success).toBe(true);
+    expect(installTransactionResponseSchema.safeParse(undo).success).toBe(false);
+    expect(undoTransactionResponseSchema.safeParse({ type: "committed", transaction: undo }).success).toBe(true);
+    expect(undoTransactionResponseSchema.safeParse({ type: "committed", transaction: install }).success).toBe(false);
   });
 });

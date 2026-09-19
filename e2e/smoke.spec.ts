@@ -8,6 +8,31 @@ import { setupDemoRepository } from "../src/lib/demo-setup";
 let root: string;
 let server: ChildProcess;
 
+function waitForExit(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+
+  return new Promise((resolvePromise, rejectPromise) => {
+    const timeout = setTimeout(() => rejectPromise(new Error("Next.js server did not stop")), 10_000);
+    child.once("exit", () => {
+      clearTimeout(timeout);
+      resolvePromise();
+    });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      rejectPromise(error);
+    });
+  });
+}
+
+async function serverIsReachable(): Promise<boolean> {
+  try {
+    await fetch("http://127.0.0.1:3100", { signal: AbortSignal.timeout(250) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 test.beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "skim-e2e-"));
   const repo = setupDemoRepository(join(root, "demo"), { appRoot: process.cwd() });
@@ -27,9 +52,16 @@ test.beforeAll(async () => {
   throw new Error("Next.js server did not become ready");
 });
 
-test.afterAll(() => {
-  if (server && !server.killed) server.kill("SIGTERM");
-  if (root) rmSync(root, { recursive: true, force: true });
+test.afterAll(async () => {
+  try {
+    if (server && server.exitCode === null && server.signalCode === null) {
+      server.kill("SIGTERM");
+      await waitForExit(server);
+    }
+    await expect.poll(serverIsReachable, { timeout: 5_000 }).toBe(false);
+  } finally {
+    if (root) rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("shows connected Skill Manager shell", async ({ page }) => {

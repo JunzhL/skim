@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, realpathSync, renameSync, rmSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 export type DemoSetupOptions = {
   appRoot: string;
@@ -19,8 +19,19 @@ function isSameOrDescendant(candidate: string, root: string): boolean {
 
 export function setupDemoRepository(destinationInput: string, options: DemoSetupOptions): string {
   const appRoot = realpathSync(options.appRoot);
-  const destination = resolve(destinationInput);
+  const requestedDestination = resolve(destinationInput);
 
+  if (existsSync(requestedDestination)) {
+    throw new Error(`Destination already exists: ${requestedDestination}`);
+  }
+
+  const requestedParent = dirname(requestedDestination);
+  if (!existsSync(requestedParent)) {
+    throw new Error(`Destination parent does not exist: ${requestedParent}`);
+  }
+
+  const parent = realpathSync(requestedParent);
+  const destination = join(parent, basename(requestedDestination));
   if (isSameOrDescendant(destination, appRoot)) {
     throw new Error("Demo repository destination must not be the application repository or one of its descendants");
   }
@@ -28,13 +39,8 @@ export function setupDemoRepository(destinationInput: string, options: DemoSetup
     throw new Error(`Destination already exists: ${destination}`);
   }
 
-  const parent = dirname(destination);
-  if (!existsSync(parent)) {
-    throw new Error(`Destination parent does not exist: ${parent}`);
-  }
-
   const templatePath = options.templatePath ?? resolve(appRoot, "fixtures/demo-repo-template");
-  const temporary = mkdtempSync(resolve(parent, ".skim-demo-tmp-"));
+  const temporary = mkdtempSync(join(parent, ".skim-demo-tmp-"));
 
   try {
     cpSync(templatePath, temporary, { recursive: true });

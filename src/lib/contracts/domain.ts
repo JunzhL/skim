@@ -74,7 +74,8 @@ export const conflictReportSchema = z.object({
   evidence: z.array(conflictEvidenceSchema).min(2),
 });
 
-export const installResolutionSchema = z.enum(["keep-existing", "activate-incoming", "cancel"]);
+export const installResolutionSchema = z.enum(["keep-existing", "activate-incoming"]);
+export const previewResolutionSchema = z.union([installResolutionSchema, z.literal("cancel")]);
 
 export const installPreviewSchema = z.object({
   previewId: identifierSchema,
@@ -82,14 +83,12 @@ export const installPreviewSchema = z.object({
   incomingSkill: skillRecordSchema,
   unifiedDiff: z.string(),
   conflicts: z.array(conflictReportSchema),
-  allowedResolutions: z.array(installResolutionSchema).min(1),
+  allowedResolutions: z.array(previewResolutionSchema).min(1),
   createdAt: utcTimestampSchema,
 });
 
-export const transactionRecordSchema = z.object({
+const transactionRecordBaseSchema = z.object({
   transactionId: identifierSchema,
-  type: z.enum(["install", "undo"]),
-  resolution: installResolutionSchema,
   beforeCommit: commitSchema,
   afterCommit: commitSchema,
   affectedPathHashes: z.array(z.object({
@@ -98,8 +97,19 @@ export const transactionRecordSchema = z.object({
     afterHash: sha256Schema.nullable(),
   })),
   createdAt: utcTimestampSchema,
-  originalTransactionId: identifierSchema.optional(),
 });
+
+export const installTransactionRecordSchema = transactionRecordBaseSchema.extend({
+  type: z.literal("install"),
+  resolution: installResolutionSchema,
+}).strict();
+
+export const undoTransactionRecordSchema = transactionRecordBaseSchema.extend({
+  type: z.literal("undo"),
+  originalTransactionId: identifierSchema,
+}).strict();
+
+export const transactionRecordSchema = z.discriminatedUnion("type", [installTransactionRecordSchema, undoTransactionRecordSchema]);
 
 export const agentRunSchema = z.object({
   runId: identifierSchema,
@@ -119,6 +129,7 @@ export type AgentConfig = z.infer<typeof agentConfigSchema>;
 export type AgentsFile = z.infer<typeof agentsFileSchema>;
 export type ConflictReport = z.infer<typeof conflictReportSchema>;
 export type InstallResolution = z.infer<typeof installResolutionSchema>;
+export type PreviewResolution = z.infer<typeof previewResolutionSchema>;
 export type InstallPreview = z.infer<typeof installPreviewSchema>;
 export type TransactionRecord = z.infer<typeof transactionRecordSchema>;
 export type AgentRun = z.infer<typeof agentRunSchema>;

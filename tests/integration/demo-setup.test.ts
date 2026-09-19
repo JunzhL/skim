@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { setupDemoRepository } from "@/lib/demo-setup";
 
@@ -25,8 +25,9 @@ describe("demo setup", () => {
     const root = tempRoot();
     const destination = join(root, "demo");
     const result = setupDemoRepository(destination, { appRoot: process.cwd() });
-    expect(result).toBe(resolve(destination));
+    expect(result).toBe(join(realpathSync(root), "demo"));
     expect(readFileSync(join(destination, "skills/package-manager-policy/SKILL.md"), "utf8")).toContain("use `pnpm add` and keep `pnpm-lock.yaml` updated.");
+    expect(readFileSync(join(destination, "skills/package-manager-policy/SKILL.md"), "utf8")).toMatch(/^---\nname: package-manager-policy\ndescription: .+\n---\n/);
     const agents = readFileSync(join(destination, "agents.yaml"), "utf8");
     expect(agents.match(/skillId: package-manager-policy/g)).toHaveLength(2);
     expect(agents.match(/enabled: true/g)).toHaveLength(2);
@@ -41,6 +42,14 @@ describe("demo setup", () => {
   it("refuses existing destinations", () => {
     const root = tempRoot();
     expect(() => setupDemoRepository(root, { appRoot: process.cwd() })).toThrow(/already exists|application repository/);
+  });
+
+  it("refuses a destination whose parent symlink resolves inside the application repository", () => {
+    const root = tempRoot();
+    const linkedParent = join(root, "linked-parent");
+    symlinkSync(process.cwd(), linkedParent, "dir");
+
+    expect(() => setupDemoRepository(join(linkedParent, "demo"), { appRoot: process.cwd() })).toThrow(/application repository/);
   });
 
   it("cleans only its temporary directory after a forced failure", () => {
