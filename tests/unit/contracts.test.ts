@@ -45,6 +45,7 @@ describe("domain contracts", () => {
     expect(agentsFileSchema.parse({ schemaVersion: 1, agents: [{ id: "builder", name: "Builder", skills: [{ skillId: skill.id, enabled: true, priority: 100 }] }] })).toBeTruthy();
     expect(conflictReportSchema.parse(conflict)).toBeTruthy();
     expect(gitImportSourceSchema.safeParse({ type: "git", url: skill.source.url, commit, subdirectory: skill.source.subdirectory }).success).toBe(true);
+    expect(gitImportSourceSchema.safeParse({ type: "git", url: "file:///private/repository", commit, subdirectory: skill.source.subdirectory }).success).toBe(false);
     expect(installPreviewSchema.parse({ previewId: "preview-1", transactionId: "tx-preview-1", baseCommit: commit, incomingSkill: skill, unifiedDiff: "diff", resolutionDiffs: { "keep-existing": "keep diff", "activate-incoming": "activate diff" }, conflicts: [conflict], allowedResolutions: ["keep-existing", "activate-incoming", "cancel"], createdAt: timestamp })).toBeTruthy();
     expect(transactionRecordSchema.parse({ transactionId: "tx-1", type: "install", resolution: "activate-incoming", beforeCommit: commit, afterCommit: "c".repeat(40), affectedPathHashes: [{ path: "agents.yaml", beforeHash: hash, afterHash: "d".repeat(64) }], createdAt: timestamp })).toBeTruthy();
     expect(transactionRecordSchema.parse({ transactionId: "tx-2", type: "undo", originalTransactionId: "tx-1", beforeCommit: "c".repeat(40), afterCommit: "d".repeat(40), affectedPathHashes: [{ path: "agents.yaml", beforeHash: hash, afterHash: null }], createdAt: timestamp })).toBeTruthy();

@@ -31,6 +31,8 @@ import { importPinnedSkill, type ImportedSkill } from "../skills/import";
 import { conflictAnalysisRequests, validateSkillSet } from "../validation";
 
 const TRANSACTIONS_DIRECTORY = ".skim/transactions";
+const PREVIEW_TTL_MS = 15 * 60 * 1_000;
+const MAX_STORED_PREVIEWS = 8;
 // A Git commit cannot contain its own SHA in a tracked file without creating a
 // cryptographic self-reference. Persist "self" and resolve it to the containing
 // commit when reading transaction history.
@@ -51,6 +53,7 @@ type StoredPreview = {
   preview: RequiredPreview;
   incomingFingerprint: string;
   conflictingSkillIds: string[];
+  storedAtMs: number;
 };
 
 type PreviewRuntime = typeof globalThis & {
@@ -59,6 +62,24 @@ type PreviewRuntime = typeof globalThis & {
 
 const previewRuntime = globalThis as PreviewRuntime;
 const previewStore = (previewRuntime.__skimInstallPreviewStore ??= new Map<string, StoredPreview>());
+
+function pruneExpiredPreviews(nowMs: number): void {
+  for (const [previewId, stored] of previewStore) {
+    if (nowMs - stored.storedAtMs >= PREVIEW_TTL_MS) previewStore.delete(previewId);
+  }
+}
+
+function storePreview(previewId: string, stored: Omit<StoredPreview, "storedAtMs">): void {
+  const nowMs = Date.now();
+  pruneExpiredPreviews(nowMs);
+  previewStore.delete(previewId);
+  while (previewStore.size >= MAX_STORED_PREVIEWS) {
+    const oldestPreviewId = previewStore.keys().next().value;
+    if (oldestPreviewId === undefined) break;
+    previewStore.delete(oldestPreviewId);
+  }
+  previewStore.set(previewId, { ...stored, storedAtMs: nowMs });
+}
 
 export type CreateInstallPreviewOptions = {
   repoPath: string;
@@ -462,7 +483,7 @@ export async function createInstallPreview(
       createdAt,
     }) as RequiredPreview;
 
-    previewStore.set(previewId, {
+    storePreview(previewId, {
       repoPath,
       source: structuredClone(options.source),
       preview,
@@ -474,6 +495,7 @@ export async function createInstallPreview(
 }
 
 function requireStoredPreview(repoPath: string, previewId: string): StoredPreview {
+  pruneExpiredPreviews(Date.now());
   const stored = previewStore.get(previewId);
   if (!stored) {
     throw new SkimError("PREVIEW_NOT_FOUND", `Install preview ${previewId} was not found`, { previewId });
@@ -609,4 +631,6 @@ export function clearInstallPreviewStoreForTests(): void {
 export const installTransactionStorage = {
   directory: TRANSACTIONS_DIRECTORY,
   selfCommitValue: SELF_COMMIT,
+  previewTtlMs: PREVIEW_TTL_MS,
+  maxStoredPreviews: MAX_STORED_PREVIEWS,
 } as const;

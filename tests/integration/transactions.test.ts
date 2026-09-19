@@ -23,6 +23,7 @@ import {
 } from "../helpers/git-fixtures";
 
 afterEach(() => {
+  vi.restoreAllMocks();
   clearInstallPreviewStoreForTests();
   cleanupTempDirectories();
 });
@@ -283,5 +284,50 @@ describe("atomic install previews and transactions", () => {
     expect(preview.conflicts).toEqual([]);
     expect(createAdapter).not.toHaveBeenCalled();
     expect(workingTreeStatus(managed)).toBe("");
+  });
+
+  it("expires abandoned previews", async () => {
+    const managed = managedRepository();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const preview = await createInstallPreview({
+      repoPath: managed,
+      source: artSource(),
+      createConflictAdapter: () => {
+        throw new Error("model must not be called");
+      },
+      createPreviewId: () => "preview-expiring",
+      createTransactionId: () => "tx-expiring",
+    });
+
+    clock.mockReturnValue(1_000 + installTransactionStorage.previewTtlMs);
+    await expect(
+      confirmInstall({ repoPath: managed, previewId: preview.previewId, resolution: "cancel" }),
+    ).rejects.toMatchObject({ code: "PREVIEW_NOT_FOUND" });
+    clock.mockRestore();
+  });
+
+  it("evicts the oldest preview when the store reaches its capacity", async () => {
+    const managed = managedRepository();
+    const source = artSource();
+    const previews = [];
+
+    for (let index = 0; index <= installTransactionStorage.maxStoredPreviews; index += 1) {
+      previews.push(await createInstallPreview({
+        repoPath: managed,
+        source,
+        createConflictAdapter: () => {
+          throw new Error("model must not be called");
+        },
+        createPreviewId: () => `preview-capacity-${index}`,
+        createTransactionId: () => `tx-capacity-${index}`,
+      }));
+    }
+
+    await expect(
+      confirmInstall({ repoPath: managed, previewId: previews[0].previewId, resolution: "cancel" }),
+    ).rejects.toMatchObject({ code: "PREVIEW_NOT_FOUND" });
+    await expect(
+      confirmInstall({ repoPath: managed, previewId: previews.at(-1)!.previewId, resolution: "cancel" }),
+    ).resolves.toMatchObject({ type: "cancelled" });
   });
 });

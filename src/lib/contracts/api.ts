@@ -20,12 +20,18 @@ export const getRegistryResponseSchema = z.object({
 
 export const getTransactionsResponseSchema = z.object({ transactions: z.array(transactionRecordSchema) });
 
-export const gitImportSourceSchema = gitProvenanceSchema.pick({
-  type: true,
-  url: true,
-  commit: true,
-  subdirectory: true,
-});
+export const gitImportSourceSchema = gitProvenanceSchema
+  .pick({
+    type: true,
+    url: true,
+    commit: true,
+    subdirectory: true,
+  })
+  .extend({
+    url: z.string().url().refine((value) => new URL(value).protocol === "https:", {
+      message: "Git import URL must use HTTPS",
+    }),
+  });
 export const importPreviewRequestSchema = z.object({ source: gitImportSourceSchema });
 export const importPreviewResponseSchema = installPreviewSchema;
 
