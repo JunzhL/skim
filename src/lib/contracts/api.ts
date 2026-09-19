@@ -5,8 +5,8 @@ import {
   agentRunSchema,
   gitProvenanceSchema,
   installPreviewSchema,
-  installResolutionSchema,
   installTransactionRecordSchema,
+  previewResolutionSchema,
   skillRecordSchema,
   transactionRecordSchema,
   undoTransactionRecordSchema,
@@ -20,14 +20,28 @@ export const getRegistryResponseSchema = z.object({
 
 export const getTransactionsResponseSchema = z.object({ transactions: z.array(transactionRecordSchema) });
 
-export const importPreviewRequestSchema = z.object({ source: gitProvenanceSchema });
+export const gitImportSourceSchema = gitProvenanceSchema.pick({
+  type: true,
+  url: true,
+  commit: true,
+  subdirectory: true,
+});
+export const importPreviewRequestSchema = z.object({ source: gitImportSourceSchema });
 export const importPreviewResponseSchema = installPreviewSchema;
 
 export const installTransactionRequestSchema = z.object({
   previewId: identifierSchema,
-  resolution: installResolutionSchema,
+  resolution: previewResolutionSchema,
 });
-export const installTransactionResponseSchema = installTransactionRecordSchema;
+export const cancelledInstallResponseSchema = z.object({
+  type: z.literal("cancelled"),
+  previewId: identifierSchema,
+  transactionId: identifierSchema,
+});
+export const installTransactionResponseSchema = z.union([
+  installTransactionRecordSchema,
+  cancelledInstallResponseSchema,
+]);
 
 export const undoConflictSchema = z.object({
   type: z.literal("conflict"),
@@ -55,3 +69,6 @@ export const reservedApiSchema = {
 } as const;
 
 export type UndoConflict = z.infer<typeof undoConflictSchema>;
+
+export type GitImportSource = z.infer<typeof gitImportSourceSchema>;
+export type CancelledInstallResponse = z.infer<typeof cancelledInstallResponseSchema>;
