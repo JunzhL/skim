@@ -1,0 +1,14 @@
+schemaVersion: 1
+agents:
+  - id: builder
+    name: Builder
+    skills:
+      - skillId: package-manager-policy
+        enabled: true
+        priority: 100
+  - id: reviewer
+    name: Reviewer
+    skills:
+      - skillId: package-manager-policy
+        enabled: true
+        priority: 100
