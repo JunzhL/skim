@@ -117,6 +117,8 @@ export function buildRegistrySnapshot(source: TreeSource, options: BuildRegistry
       source: options.provenance?.get(slug) ?? ledger.get(slug) ?? { type: "builtin", name: slug },
       files,
       scopes: frontmatter.scopes,
+      ...(frontmatter.dependencies.length > 0 ? { dependencies: frontmatter.dependencies } : {}),
+      ...(frontmatter.workflows.length > 0 ? { workflows: frontmatter.workflows } : {}),
       enabled: enabledSkillIds.has(slug),
     });
   }

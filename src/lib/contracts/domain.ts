@@ -17,6 +17,18 @@ export const gitProvenanceSchema = z.object({
 
 export const skillSourceSchema = z.discriminatedUnion("type", [builtinSourceSchema, gitProvenanceSchema]);
 
+export const skillWorkflowSchema = z.object({
+  task: identifierSchema,
+  executable: z.string().min(1),
+  arguments: z.array(z.string()),
+  lockfile: relativePosixPathSchema,
+});
+
+export const skillScopesSchema = z.object({
+  tasks: z.array(identifierSchema),
+  fileGlobs: z.array(z.string().min(1)),
+});
+
 export const skillRecordSchema = z.object({
   id: identifierSchema,
   name: z.string().min(1),
@@ -24,10 +36,9 @@ export const skillRecordSchema = z.object({
   path: relativePosixPathSchema,
   source: skillSourceSchema,
   files: z.array(z.object({ path: relativePosixPathSchema, hash: sha256Schema })).min(1),
-  scopes: z.object({
-    tasks: z.array(identifierSchema),
-    fileGlobs: z.array(z.string().min(1)),
-  }),
+  scopes: skillScopesSchema,
+  dependencies: z.array(identifierSchema).optional(),
+  workflows: z.array(skillWorkflowSchema).optional(),
   enabled: z.boolean(),
 });
 
@@ -125,6 +136,8 @@ export const agentRunSchema = z.object({
 });
 
 export type GitProvenance = z.infer<typeof gitProvenanceSchema>;
+export type SkillScopes = z.infer<typeof skillScopesSchema>;
+export type SkillWorkflow = z.infer<typeof skillWorkflowSchema>;
 export type SkillRecord = z.infer<typeof skillRecordSchema>;
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 export type AgentsFile = z.infer<typeof agentsFileSchema>;

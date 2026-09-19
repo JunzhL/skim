@@ -81,3 +81,30 @@ test("serves the committed registry at the managed repository HEAD", async ({ re
   expect(body.skills[0]).toMatchObject({ source: { type: "builtin", name: "package-manager-policy" }, enabled: true });
   expect(body.agents.map((agent: { id: string }) => agent.id)).toEqual(["builder", "reviewer"]);
 });
+
+test("reloads a demo agent and records an intercepted dependency command", async ({ request }) => {
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repository, encoding: "utf8" }).trim();
+
+  const reload = await request.post("/api/agents/builder/reload");
+  expect(reload.ok()).toBe(true);
+  expect(await reload.json()).toEqual({ agentId: "builder", loadedConfigurationCommit: head });
+
+  const run = await request.post("/api/agents/builder/run", { data: { task: "add zod" } });
+  expect(run.ok()).toBe(true);
+  expect(await run.json()).toMatchObject({
+    agentId: "builder",
+    task: "add zod",
+    configurationCommit: head,
+    interceptedExecutable: "pnpm",
+    interceptedArguments: ["add", "zod"],
+    expectedLockfile: "pnpm-lock.yaml",
+    status: "completed",
+  });
+
+  const rejected = await request.post("/api/agents/builder/run", { data: { task: "" } });
+  expect(rejected.status()).toBe(400);
+
+  const unknown = await request.post("/api/agents/ghost/reload");
+  expect(unknown.status()).toBe(409);
+  expect((await unknown.json()).code).toBe("AGENT_NOT_FOUND");
+});
