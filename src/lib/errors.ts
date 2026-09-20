@@ -31,6 +31,10 @@ export type SkimErrorCode =
   | "PREVIEW_REPOSITORY_MISMATCH"
   | "PREVIEW_STALE"
   | "PREVIEW_SOURCE_CHANGED"
+  | "TRANSACTION_NOT_FOUND"
+  | "TRANSACTION_INVALID"
+  | "TRANSACTION_ALREADY_UNDONE"
+  | "UNDO_STALE"
   | "GIT_FAILED";
 
 export class SkimError extends Error {

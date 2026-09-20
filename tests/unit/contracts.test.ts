@@ -85,6 +85,22 @@ describe("domain contracts", () => {
     expect(installTransactionResponseSchema.safeParse({ type: "cancelled", previewId: "preview-1", transactionId: "tx-preview-1" }).success).toBe(true);
     expect(installTransactionResponseSchema.safeParse(undo).success).toBe(false);
     expect(undoTransactionResponseSchema.safeParse({ type: "committed", transaction: undo }).success).toBe(true);
+    expect(undoTransactionResponseSchema.safeParse({
+      type: "conflict",
+      transactionId: "tx-1",
+      message: "affected file changed",
+      paths: ["agents.yaml"],
+      files: [{
+        path: "agents.yaml",
+        beforeHash: hash,
+        expectedAfterHash: "c".repeat(64),
+        currentHash: "d".repeat(64),
+        before: "before",
+        expectedAfter: "expected",
+        current: "current",
+        threeWayDiff: "three-way",
+      }],
+    }).success).toBe(true);
     expect(undoTransactionResponseSchema.safeParse({ type: "committed", transaction: install }).success).toBe(false);
   });
 });

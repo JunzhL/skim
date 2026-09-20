@@ -4,14 +4,17 @@ import { SkimError } from "@/lib/errors";
 function skimStatus(error: SkimError): number {
   if (error.code === "MODEL_PROVIDER_CREDENTIALS_MISSING") return 503;
   if (error.code.startsWith("MODEL_PROVIDER_") || error.code === "INVALID_CONFLICT_CITATION") return 502;
-  if (error.code === "PREVIEW_NOT_FOUND") return 404;
+  if (error.code === "PREVIEW_NOT_FOUND" || error.code === "TRANSACTION_NOT_FOUND") return 404;
   if (
     error.code === "PREVIEW_STALE" ||
     error.code === "PREVIEW_REPOSITORY_MISMATCH" ||
     error.code === "PREVIEW_SOURCE_CHANGED" ||
     error.code === "MANAGED_REPOSITORY_DIRTY" ||
     error.code === "VALIDATION_FAILED" ||
-    error.code === "DESTINATION_EXISTS"
+    error.code === "DESTINATION_EXISTS" ||
+    error.code === "TRANSACTION_INVALID" ||
+    error.code === "TRANSACTION_ALREADY_UNDONE" ||
+    error.code === "UNDO_STALE"
   ) {
     return 409;
   }

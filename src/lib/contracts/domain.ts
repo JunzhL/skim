@@ -162,5 +162,6 @@ export type InstallResolution = z.infer<typeof installResolutionSchema>;
 export type PreviewResolution = z.infer<typeof previewResolutionSchema>;
 export type InstallPreview = z.infer<typeof installPreviewSchema>;
 export type InstallTransactionRecord = z.infer<typeof installTransactionRecordSchema>;
+export type UndoTransactionRecord = z.infer<typeof undoTransactionRecordSchema>;
 export type TransactionRecord = z.infer<typeof transactionRecordSchema>;
 export type AgentRun = z.infer<typeof agentRunSchema>;
