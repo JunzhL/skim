@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentStatusResponseSchema,
   agentsFileSchema,
   agentRunSchema,
   conflictReportSchema,
@@ -49,6 +50,7 @@ describe("domain contracts", () => {
     expect(installPreviewSchema.parse({ previewId: "preview-1", transactionId: "tx-preview-1", baseCommit: commit, incomingSkill: skill, unifiedDiff: "diff", resolutionDiffs: { "keep-existing": "keep diff", "activate-incoming": "activate diff" }, conflicts: [conflict], allowedResolutions: ["keep-existing", "activate-incoming", "cancel"], createdAt: timestamp })).toBeTruthy();
     expect(transactionRecordSchema.parse({ transactionId: "tx-1", type: "install", resolution: "activate-incoming", beforeCommit: commit, afterCommit: "c".repeat(40), affectedPathHashes: [{ path: "agents.yaml", beforeHash: hash, afterHash: "d".repeat(64) }], createdAt: timestamp })).toBeTruthy();
     expect(transactionRecordSchema.parse({ transactionId: "tx-2", type: "undo", originalTransactionId: "tx-1", beforeCommit: "c".repeat(40), afterCommit: "d".repeat(40), affectedPathHashes: [{ path: "agents.yaml", beforeHash: hash, afterHash: null }], createdAt: timestamp })).toBeTruthy();
+    expect(agentStatusResponseSchema.parse({ agentId: "builder", name: "Builder", loadedConfigurationCommit: commit, activeSkillIds: ["package-manager-policy"] })).toBeTruthy();
     expect(agentRunSchema.parse({ runId: "run-1", agentId: "builder", task: "add zod", configurationCommit: commit, interceptedExecutable: "pnpm", interceptedArguments: ["add", "zod"], expectedLockfile: "pnpm-lock.yaml", status: "completed", timestamp })).toBeTruthy();
   });
 
