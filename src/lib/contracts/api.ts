@@ -75,6 +75,12 @@ export const undoTransactionResponseSchema = z.union([
   undoConflictSchema,
 ]);
 
+export const agentStatusResponseSchema = z.object({
+  agentId: identifierSchema,
+  name: z.string().min(1),
+  loadedConfigurationCommit: commitSchema.nullable(),
+  activeSkillIds: z.array(identifierSchema),
+});
 export const agentReloadResponseSchema = z.object({ agentId: identifierSchema, loadedConfigurationCommit: commitSchema });
 export const agentRunRequestSchema = z.object({ task: z.string().min(1) });
 export const agentRunResponseSchema = agentRunSchema;
@@ -85,6 +91,7 @@ export const reservedApiSchema = {
   "POST /api/imports/preview": { request: importPreviewRequestSchema, response: importPreviewResponseSchema, error: apiErrorSchema },
   "POST /api/transactions/install": { request: installTransactionRequestSchema, response: installTransactionResponseSchema, error: apiErrorSchema },
   "POST /api/transactions/:id/undo": { response: undoTransactionResponseSchema, error: apiErrorSchema },
+  "GET /api/agents/:id": { response: agentStatusResponseSchema, error: apiErrorSchema },
   "POST /api/agents/:id/reload": { response: agentReloadResponseSchema, error: apiErrorSchema },
   "POST /api/agents/:id/run": { request: agentRunRequestSchema, response: agentRunResponseSchema, error: apiErrorSchema },
 } as const;
