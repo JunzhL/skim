@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiErrorSchema, commitSchema, identifierSchema, relativePosixPathSchema } from "./common";
+import { apiErrorSchema, commitSchema, identifierSchema, relativePosixPathSchema, sha256Schema } from "./common";
 import {
   agentConfigSchema,
   agentRunSchema,
@@ -49,11 +49,26 @@ export const installTransactionResponseSchema = z.union([
   cancelledInstallResponseSchema,
 ]);
 
+export const undoConflictFileSchema = z.object({
+  path: relativePosixPathSchema,
+  beforeHash: sha256Schema.nullable(),
+  expectedAfterHash: sha256Schema.nullable(),
+  currentHash: sha256Schema.nullable(),
+  beforeMode: z.string().regex(/^[0-7]{6}$/).nullable(),
+  expectedAfterMode: z.string().regex(/^[0-7]{6}$/).nullable(),
+  currentMode: z.string().regex(/^[0-7]{6}$/).nullable(),
+  before: z.string().nullable(),
+  expectedAfter: z.string().nullable(),
+  current: z.string().nullable(),
+  threeWayDiff: z.string().min(1),
+});
+
 export const undoConflictSchema = z.object({
   type: z.literal("conflict"),
   transactionId: identifierSchema,
   message: z.string().min(1),
   paths: z.array(relativePosixPathSchema).min(1),
+  files: z.array(undoConflictFileSchema).min(1),
 });
 export const undoTransactionResponseSchema = z.union([
   z.object({ type: z.literal("committed"), transaction: undoTransactionRecordSchema }),
@@ -74,6 +89,7 @@ export const reservedApiSchema = {
   "POST /api/agents/:id/run": { request: agentRunRequestSchema, response: agentRunResponseSchema, error: apiErrorSchema },
 } as const;
 
+export type UndoConflictFile = z.infer<typeof undoConflictFileSchema>;
 export type UndoConflict = z.infer<typeof undoConflictSchema>;
 
 export type GitImportSource = z.infer<typeof gitImportSourceSchema>;
