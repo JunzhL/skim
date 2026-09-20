@@ -263,6 +263,8 @@ All endpoints share the `ApiError` schema and are validated with the Zod contrac
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /api/registry` | The registry at the managed repository HEAD |
+| `GET /api/catalog` | The curated store front, pinned in `fixtures/catalog.json` |
+| `POST /api/catalog/browse` | List every skill directory in one commit of any repository |
 | `GET /api/transactions` | Committed install and Undo transactions |
 | `POST /api/imports/preview` | Preview a pinned import, with conflict reports and the proposed diff |
 | `POST /api/transactions/install` | Confirm a preview with `keep-existing`, `activate-incoming`, or `cancel` |
@@ -274,12 +276,32 @@ All endpoints share the `ApiError` schema and are validated with the Zod contrac
 Import URLs must use `https:`. A `file://` or `git@` URL is rejected at the API boundary, even though the
 importer library itself accepts `file://` for tests and local fixtures.
 
+## Skill store
+
+Skills reach the managed repository through one panel with three tabs.
+
+**Featured** renders `fixtures/catalog.json`: a curated list where every entry carries a name, a description,
+tags, a detected license, and a source pinned to an exact commit and subdirectory. Picking a card runs the same
+preview as typing those fields by hand, so the demo never depends on pasting a 40-character SHA. A card whose
+skill is already installed is disabled rather than silently re-importing.
+
+**Browse a repository** takes any Git URL and commit and lists every directory containing a `SKILL.md` at that
+commit, with its declared name, description, detected license, and file count. A directory whose frontmatter is
+missing or malformed is skipped rather than failing the whole listing, so one broken skill cannot hide the
+rest. The listing is sorted by path, so the same commit always produces the same order.
+
+**Manual** is the original form: URL, commit, and subdirectory.
+
+All three paths converge on `POST /api/imports/preview`, so they share one set of rules — HTTPS only, a full
+40-character commit, and no change to the managed repository until confirmation.
+
 ## Scope
 
 Delivered, and covered by `pnpm test:all`:
 
 - A Next.js dashboard backed by an independent Git repository chosen with `SKIM_REPO_PATH`.
 - Pinned, whole-directory skill imports with provenance, per-file SHA-256 hashes, and license detection.
+- A skill store: a curated pinned catalogue plus live browsing of any repository at a chosen commit.
 - A registry derived from the committed tree at HEAD, so every agent reads one configuration version.
 - Deterministic structural validation, then scope-based conflict candidates, then an evidence-backed
   conflict report from OpenAI or DeepSeek with every citation verified against the real files.
@@ -295,4 +317,5 @@ Deliberately not built:
 - Adapters for third-party agent platforms, and general-purpose command execution.
 - Automatic hot reload, unattended conflict resolution, and automatic rewriting of skill instructions.
 - Local-directory, branch, and tag imports — a skill is always pinned to one commit.
-- A searchable public skill marketplace.
+- A searchable public skill marketplace. The store lists a curated file and browses one repository at a time;
+  there is no index service, no cross-repository search, and no submission flow.

@@ -32,6 +32,37 @@ export const gitImportSourceSchema = gitProvenanceSchema
       message: "Git import URL must use HTTPS",
     }),
   });
+export const catalogEntrySchema = z.object({
+  id: identifierSchema,
+  name: z.string().min(1),
+  description: z.string().min(1),
+  source: gitImportSourceSchema,
+  license: z.string().min(1),
+  tags: z.array(identifierSchema),
+});
+
+export const getCatalogResponseSchema = z.object({ entries: z.array(catalogEntrySchema) });
+
+export const browseCatalogRequestSchema = z.object({
+  url: gitImportSourceSchema.shape.url,
+  commit: gitImportSourceSchema.shape.commit,
+});
+
+export const browsedSkillSchema = z.object({
+  id: identifierSchema,
+  name: z.string().min(1),
+  description: z.string().min(1),
+  subdirectory: relativePosixPathSchema,
+  license: z.string().min(1),
+  fileCount: z.number().int().min(1),
+});
+
+export const browseCatalogResponseSchema = z.object({
+  url: gitImportSourceSchema.shape.url,
+  commit: gitImportSourceSchema.shape.commit,
+  skills: z.array(browsedSkillSchema),
+});
+
 export const importPreviewRequestSchema = z.object({ source: gitImportSourceSchema });
 export const importPreviewResponseSchema = installPreviewSchema;
 
@@ -87,6 +118,8 @@ export const agentRunResponseSchema = agentRunSchema;
 
 export const reservedApiSchema = {
   "GET /api/registry": { response: getRegistryResponseSchema, error: apiErrorSchema },
+  "GET /api/catalog": { response: getCatalogResponseSchema, error: apiErrorSchema },
+  "POST /api/catalog/browse": { request: browseCatalogRequestSchema, response: browseCatalogResponseSchema, error: apiErrorSchema },
   "GET /api/transactions": { response: getTransactionsResponseSchema, error: apiErrorSchema },
   "POST /api/imports/preview": { request: importPreviewRequestSchema, response: importPreviewResponseSchema, error: apiErrorSchema },
   "POST /api/transactions/install": { request: installTransactionRequestSchema, response: installTransactionResponseSchema, error: apiErrorSchema },
@@ -101,3 +134,8 @@ export type UndoConflict = z.infer<typeof undoConflictSchema>;
 
 export type GitImportSource = z.infer<typeof gitImportSourceSchema>;
 export type CancelledInstallResponse = z.infer<typeof cancelledInstallResponseSchema>;
+
+export type CatalogEntry = z.infer<typeof catalogEntrySchema>;
+export type BrowsedSkill = z.infer<typeof browsedSkillSchema>;
+export type BrowseCatalogResponse = z.infer<typeof browseCatalogResponseSchema>;
+export type GetCatalogResponse = z.infer<typeof getCatalogResponseSchema>;
