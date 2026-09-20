@@ -22,6 +22,9 @@ import { git, headCommit, repositoryRoot, tryGit } from "../git";
 const TRANSACTIONS_DIRECTORY = ".skim/transactions";
 const SELF_COMMIT = "self";
 const MAX_CONFLICT_STATE_CHARS = 64 * 1024;
+const MAX_CHANGED_HUNK_CHARS = 32 * 1024;
+const MAX_DIFF_LINE_CHARS = 4 * 1024;
+const DIFF_CONTEXT_LINES = 3;
 
 const affectedPathHashSchema = z.object({
   path: relativePosixPathSchema,
@@ -41,6 +44,12 @@ const persistedInstallTransactionSchema = z.object({
 });
 
 type PersistedInstallTransaction = z.infer<typeof persistedInstallTransactionSchema>;
+
+type GitTreeEntry = {
+  mode: string;
+  type: string;
+  objectId: string;
+};
 
 type PersistedUndoTransaction = {
   schemaVersion: 1;
@@ -111,6 +120,25 @@ async function withDetachedWorktree<T>(
 function fileAtCommit(repoPath: string, commit: string, path: string): Buffer | null {
   const result = tryGit(repoPath, ["show", `${commit}:${path}`]);
   return result.ok ? result.stdout : null;
+}
+
+function treeEntryAtCommit(repoPath: string, commit: string, path: string): GitTreeEntry | null {
+  const output = git(repoPath, ["ls-tree", commit, "--", `:(literal)${path}`]);
+  if (output === "") return null;
+  const match = output.match(/^([0-7]{6}) ([^ ]+) ([0-9a-f]+)\t/);
+  if (!match) {
+    throw new SkimError(
+      "TRANSACTION_INVALID",
+      `Could not read the Git tree state for ${path}`,
+      { commit, path, output },
+    );
+  }
+  return { mode: match[1], type: match[2], objectId: match[3] };
+}
+
+function sameTreeEntry(left: GitTreeEntry | null, right: GitTreeEntry | null): boolean {
+  if (left === null || right === null) return left === right;
+  return left.mode === right.mode && left.type === right.type && left.objectId === right.objectId;
 }
 
 function fileInWorkingTree(root: string, path: string): Buffer | null {
@@ -249,14 +277,116 @@ function verifyRecordedStates(
   }
 }
 
-function stateForDisplay(content: Buffer | null): string | null {
+function textForDisplay(content: Buffer | null): string | null | undefined {
   if (content === null) return null;
   if (content.includes(0)) {
-    return `<binary sha256=${sha256(content)} bytes=${content.byteLength}>`;
+    return undefined;
   }
-  const text = content.toString("utf8");
+  return content.toString("utf8");
+}
+
+function firstDifference(left: string, right: string): number {
+  const limit = Math.min(left.length, right.length);
+  let index = 0;
+  while (index < limit && left[index] === right[index]) index += 1;
+  return index;
+}
+
+function stateForDisplay(content: Buffer | null, focusOffset = 0): string | null {
+  const text = textForDisplay(content);
+  if (text === null) return null;
+  if (text === undefined) {
+    return `<binary sha256=${sha256(content!)} bytes=${content!.byteLength}>`;
+  }
   if (text.length <= MAX_CONFLICT_STATE_CHARS) return text;
-  return `${text.slice(0, MAX_CONFLICT_STATE_CHARS)}\n… [truncated]`;
+
+  const halfWindow = Math.floor(MAX_CONFLICT_STATE_CHARS / 2);
+  const start = Math.max(0, Math.min(text.length - MAX_CONFLICT_STATE_CHARS, focusOffset - halfWindow));
+  const end = Math.min(text.length, start + MAX_CONFLICT_STATE_CHARS);
+  return [
+    ...(start > 0 ? ["[earlier content omitted]"] : []),
+    text.slice(start, end),
+    ...(end < text.length ? ["[later content omitted]"] : []),
+  ].join("\n");
+}
+
+function boundedChangedLines(lines: string[], prefix: "-" | "+"): string[] {
+  const rendered = lines.map((line) => {
+    if (line.length <= MAX_DIFF_LINE_CHARS) return `${prefix}${line}`;
+    const half = Math.floor(MAX_DIFF_LINE_CHARS / 2);
+    return `${prefix}${line.slice(0, half)}[line content omitted]${line.slice(-half)}`;
+  });
+  const total = rendered.reduce((size, line) => size + line.length + 1, 0);
+  if (total <= MAX_CHANGED_HUNK_CHARS / 2) return rendered;
+
+  const budget = Math.floor(MAX_CHANGED_HUNK_CHARS / 4);
+  const take = (values: string[], fromEnd: boolean): string[] => {
+    const selected: string[] = [];
+    let size = 0;
+    const ordered = fromEnd ? [...values].reverse() : values;
+    for (const value of ordered) {
+      if (selected.length > 0 && size + value.length + 1 > budget) break;
+      selected.push(value);
+      size += value.length + 1;
+    }
+    return fromEnd ? selected.reverse() : selected;
+  };
+
+  return [
+    ...take(rendered, false),
+    `${prefix}[changed lines omitted]`,
+    ...take(rendered, true),
+  ];
+}
+
+function changedHunk(expectedAfter: Buffer | null, current: Buffer | null): string {
+  const expectedText = textForDisplay(expectedAfter);
+  const currentText = textForDisplay(current);
+  if (expectedText === undefined || currentText === undefined) {
+    return "@@ binary content; compare hashes above @@";
+  }
+  if (expectedText === currentText) return "@@ content unchanged; Git tree metadata differs @@";
+
+  const expectedLines = (expectedText ?? "").split("\n");
+  const currentLines = (currentText ?? "").split("\n");
+  let prefix = 0;
+  while (
+    prefix < expectedLines.length &&
+    prefix < currentLines.length &&
+    expectedLines[prefix] === currentLines[prefix]
+  ) prefix += 1;
+
+  let suffix = 0;
+  while (
+    suffix < expectedLines.length - prefix &&
+    suffix < currentLines.length - prefix &&
+    expectedLines[expectedLines.length - 1 - suffix] === currentLines[currentLines.length - 1 - suffix]
+  ) suffix += 1;
+
+  const contextStart = Math.max(0, prefix - DIFF_CONTEXT_LINES);
+  const expectedChangedEnd = expectedLines.length - suffix;
+  const currentChangedEnd = currentLines.length - suffix;
+  const contextEnd = Math.min(suffix, DIFF_CONTEXT_LINES);
+  const beforeContext = expectedLines.slice(contextStart, prefix).map((line) => ` ${line}`);
+  const afterContext = expectedLines
+    .slice(expectedChangedEnd, expectedChangedEnd + contextEnd)
+    .map((line) => ` ${line}`);
+
+  return [
+    `@@ -${prefix + 1},${expectedChangedEnd - prefix} +${prefix + 1},${currentChangedEnd - prefix} @@`,
+    ...beforeContext,
+    ...boundedChangedLines(expectedLines.slice(prefix, expectedChangedEnd), "-"),
+    ...boundedChangedLines(currentLines.slice(prefix, currentChangedEnd), "+"),
+    ...afterContext,
+  ].join("\n");
+}
+
+function conflictFocusOffset(expectedAfter: Buffer | null, current: Buffer | null): number {
+  const expectedText = textForDisplay(expectedAfter);
+  const currentText = textForDisplay(current);
+  return typeof expectedText === "string" && typeof currentText === "string"
+    ? firstDifference(expectedText, currentText)
+    : 0;
 }
 
 function threeWayDiff(
@@ -264,16 +394,22 @@ function threeWayDiff(
   before: Buffer | null,
   expectedAfter: Buffer | null,
   current: Buffer | null,
+  beforeEntry: GitTreeEntry | null,
+  expectedAfterEntry: GitTreeEntry | null,
+  currentEntry: GitTreeEntry | null,
 ): string {
-  const show = (content: Buffer | null) => stateForDisplay(content) ?? "<missing>";
+  const focusOffset = conflictFocusOffset(expectedAfter, current);
+  const show = (content: Buffer | null) => stateForDisplay(content, focusOffset) ?? "<missing>";
+  const mode = (entry: GitTreeEntry | null) => entry?.mode ?? "missing";
   return [
-    `--- ${path} (transaction before)`,
+    `--- ${path} (transaction before) [mode ${mode(beforeEntry)}]`,
     show(before),
-    `||||||| ${path} (expected after)`,
+    `||||||| ${path} (expected after) [mode ${mode(expectedAfterEntry)}]`,
     show(expectedAfter),
-    `======= ${path} (current)`,
+    `======= ${path} (current) [mode ${mode(currentEntry)}]`,
     show(current),
     `>>>>>>> ${path}`,
+    changedHunk(expectedAfter, current),
   ].join("\n");
 }
 
@@ -286,19 +422,34 @@ function conflictForChangedPaths(
   const files = transaction.affectedPathHashes.flatMap((entry) => {
     const current = fileAtCommit(repoPath, currentCommit, entry.path);
     const currentHash = hashOf(current);
-    if (currentHash === entry.afterHash) return [];
-
     const before = fileAtCommit(repoPath, transaction.beforeCommit, entry.path);
     const expectedAfter = fileAtCommit(repoPath, installCommit, entry.path);
+    const beforeEntry = treeEntryAtCommit(repoPath, transaction.beforeCommit, entry.path);
+    const expectedAfterEntry = treeEntryAtCommit(repoPath, installCommit, entry.path);
+    const currentEntry = treeEntryAtCommit(repoPath, currentCommit, entry.path);
+    if (currentHash === entry.afterHash && sameTreeEntry(currentEntry, expectedAfterEntry)) return [];
+    const focusOffset = conflictFocusOffset(expectedAfter, current);
+
     return [{
       path: entry.path,
       beforeHash: entry.beforeHash,
       expectedAfterHash: entry.afterHash,
       currentHash,
-      before: stateForDisplay(before),
-      expectedAfter: stateForDisplay(expectedAfter),
-      current: stateForDisplay(current),
-      threeWayDiff: threeWayDiff(entry.path, before, expectedAfter, current),
+      beforeMode: beforeEntry?.mode ?? null,
+      expectedAfterMode: expectedAfterEntry?.mode ?? null,
+      currentMode: currentEntry?.mode ?? null,
+      before: stateForDisplay(before, focusOffset),
+      expectedAfter: stateForDisplay(expectedAfter, focusOffset),
+      current: stateForDisplay(current, focusOffset),
+      threeWayDiff: threeWayDiff(
+        entry.path,
+        before,
+        expectedAfter,
+        current,
+        beforeEntry,
+        expectedAfterEntry,
+        currentEntry,
+      ),
     }];
   });
 
@@ -322,7 +473,7 @@ function restoreBeforeState(
   for (const entry of transaction.affectedPathHashes) {
     const target = join(worktree, ...entry.path.split("/"));
     if (entry.beforeHash === null) {
-      rmSync(target, { force: true });
+      rmSync(target, { recursive: true, force: true });
       continue;
     }
 
@@ -334,9 +485,7 @@ function restoreBeforeState(
         { transactionId: transaction.transactionId, path: entry.path },
       );
     }
-    rmSync(target, { force: true });
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, before);
+    git(worktree, ["checkout", transaction.beforeCommit, "--", `:(literal)${entry.path}`]);
   }
 }
 

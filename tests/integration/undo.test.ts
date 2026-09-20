@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createMockConflictAdapter } from "@/lib/conflicts";
@@ -39,6 +39,23 @@ function npmSource() {
   const root = initRepository(tempDirectory("skim-undo-source-"));
   copyInto(root, "skills/npm-workflow", "fixtures/authored-skills/npm-workflow");
   const commit = commitAll(root, "add npm workflow");
+  return {
+    type: "git" as const,
+    url: remoteUrl(root),
+    commit,
+    subdirectory: "skills/npm-workflow",
+  };
+}
+
+function largeNpmSource() {
+  const root = initRepository(tempDirectory("skim-undo-large-source-"));
+  copyInto(root, "skills/npm-workflow", "fixtures/authored-skills/npm-workflow");
+  writeFile(
+    root,
+    "skills/npm-workflow/LARGE.md",
+    `${"unchanged line\n".repeat(6_000)}expected tail\n`,
+  );
+  const commit = commitAll(root, "add large npm workflow");
   return {
     type: "git" as const,
     url: remoteUrl(root),
@@ -181,6 +198,71 @@ describe("conflict-safe Undo", () => {
     expect(file.threeWayDiff).toContain("(current)");
     expect(git(managed, "rev-parse", "HEAD")).toBe(editedCommit);
     expect(existsSync(join(managed, undoTransactionStorage.directory, "undo-should-not-exist.json"))).toBe(false);
+    expect(workingTreeStatus(managed)).toBe("");
+  });
+
+  it("treats an executable-bit change as an Undo conflict", async () => {
+    const managed = managedRepository();
+    const install = await installNpm(managed, "activate-incoming", "tx-mode-conflict");
+    const skillPath = "skills/npm-workflow/SKILL.md";
+    git(managed, "config", "core.fileMode", "true");
+    chmodSync(join(managed, skillPath), 0o755);
+    const editedCommit = commitAll(managed, "make installed skill executable");
+
+    const result = await undoInstallTransaction({
+      repoPath: managed,
+      transactionId: install.transactionId,
+      createTransactionId: () => "undo-mode-should-not-exist",
+    });
+
+    expect(result.type).toBe("conflict");
+    if (result.type !== "conflict") throw new Error("expected Undo conflict");
+    const file = result.files.find((candidate) => candidate.path === skillPath)!;
+    expect(file.currentHash).toBe(file.expectedAfterHash);
+    expect(file.expectedAfterMode).toBe("100644");
+    expect(file.currentMode).toBe("100755");
+    expect(file.threeWayDiff).toContain("content unchanged; Git tree metadata differs");
+    expect(git(managed, "rev-parse", "HEAD")).toBe(editedCommit);
+    expect(workingTreeStatus(managed)).toBe("");
+  });
+
+  it("shows changed content beyond the conflict display limit", async () => {
+    const managed = managedRepository();
+    const preview = await createInstallPreview({
+      repoPath: managed,
+      source: largeNpmSource(),
+      createConflictAdapter: conflictAdapter,
+      createPreviewId: () => "preview-large-conflict",
+      createTransactionId: () => "tx-large-conflict",
+    });
+    const install = await confirmInstall({
+      repoPath: managed,
+      previewId: preview.previewId,
+      resolution: "activate-incoming",
+    });
+    if (install.type !== "install") throw new Error("expected install transaction");
+
+    const largePath = join(managed, "skills/npm-workflow/LARGE.md");
+    writeFile(
+      managed,
+      "skills/npm-workflow/LARGE.md",
+      readFileSync(largePath, "utf8").replace("expected tail", "current tail"),
+    );
+    const editedCommit = commitAll(managed, "edit large skill tail");
+    const result = await undoInstallTransaction({
+      repoPath: managed,
+      transactionId: install.transactionId,
+      createTransactionId: () => "undo-large-should-not-exist",
+    });
+
+    expect(result.type).toBe("conflict");
+    if (result.type !== "conflict") throw new Error("expected Undo conflict");
+    const file = result.files.find((candidate) => candidate.path === "skills/npm-workflow/LARGE.md")!;
+    expect(file.expectedAfter).toContain("expected tail");
+    expect(file.current).toContain("current tail");
+    expect(file.threeWayDiff).toContain("-expected tail");
+    expect(file.threeWayDiff).toContain("+current tail");
+    expect(git(managed, "rev-parse", "HEAD")).toBe(editedCommit);
     expect(workingTreeStatus(managed)).toBe("");
   });
 
