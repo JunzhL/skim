@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -388,6 +388,15 @@ async function runRealDashboardPath(page: Page, provider: Provider) {
   await page.getByTestId("agent-reviewer").getByRole("button", { name: "Run" }).click();
   await expect(page.getByTestId("agent-builder")).toContainText("pnpm add zod");
   await expect(page.getByTestId("agent-reviewer")).toContainText("pnpm add zod");
+
+  // The runbook's evidence is the managed repository's history, not the dashboard text:
+  // the install and the recovery commit must both survive the demo.
+  const log = execFileSync("git", ["log", "--format=%s"], { cwd: repository, encoding: "utf8" }).trim().split("\n");
+  expect(log).toHaveLength(3);
+  expect(log[2]).toBe("chore: initialize skim demo repository");
+  expect(log[1]).toMatch(/npm-workflow/);
+  expect(log[0]).toMatch(/[Uu]ndo|[Rr]ecover|revert/);
+  expect(execFileSync("git", ["status", "--porcelain"], { cwd: repository, encoding: "utf8" })).toBe("");
 }
 
 test("runs the full dashboard path through real APIs with normalized OpenAI output", async ({ page }) => {

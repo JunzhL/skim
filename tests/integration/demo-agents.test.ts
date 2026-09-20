@@ -1,16 +1,18 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createDemoAgent, createRecordingInterceptor, DemoAgentConfigurationError } from "@/lib/agents";
+import { createDemoAgent, createRecordingInterceptor, DemoAgentConfigurationError, type RecordingInterceptor } from "@/lib/agents";
 import { agentRunSchema } from "@/lib/contracts";
 import { setupDemoRepository } from "@/lib/demo-setup";
 import { readRegistry } from "@/lib/registry";
 import { cleanupTempDirectories, commitAll, copyInto, git, tempDirectory } from "../helpers/git-fixtures";
 
-const workspaces: string[] = [];
+const interceptors: RecordingInterceptor[] = [];
 
 afterEach(() => {
-  for (const workspace of workspaces.splice(0)) rmSync(workspace, { recursive: true, force: true });
+  for (const interceptor of interceptors.splice(0)) {
+    for (const command of interceptor.commands) rmSync(command.cwd, { recursive: true, force: true });
+  }
   cleanupTempDirectories();
 });
 
@@ -56,6 +58,7 @@ function activateNpmWorkflow(managed: string): string {
 
 function demoAgents(managed: string) {
   const interceptor = createRecordingInterceptor();
+  interceptors.push(interceptor);
   const make = (agentId: string) =>
     createDemoAgent({
       agentId,
@@ -148,7 +151,6 @@ describe("reloadable demo agents against a managed repository", () => {
     await builder.run("add zod");
 
     const command = interceptor.commands[0];
-    workspaces.push(command.cwd);
 
     expect(command.cwd.startsWith(managed)).toBe(false);
     expect(existsSync(join(command.cwd, "node_modules"))).toBe(false);

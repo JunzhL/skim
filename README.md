@@ -1,6 +1,11 @@
 # skim
 
-Skill Manager is a developer tool for managing shared agent skills with explicit configuration, provenance, and safe change history. Issues #2 to #5 establish the TypeScript application foundation, the typed contracts, pinned Git skill imports, the versioned registry, two reloadable demo agents, and deterministic structural validation with conflict-candidate detection. Semantic conflict reports, install transactions, Undo, and the dashboard are intentionally not implemented yet.
+Skill Manager treats installing an agent skill as a reviewable Git transaction: import a skill pinned to one
+commit, see the specific lines where it contradicts an active skill, choose a resolution, watch two agents
+change behaviour, and undo the whole thing with a recovery commit that keeps the history.
+
+The 90-second walkthrough, with the expected screen and the observable evidence at each step, is in
+[`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
 ## Prerequisites
 
@@ -38,25 +43,44 @@ The command prints the absolute repository path and an `SKIM_REPO_PATH=...` line
 
 ## Environment configuration
 
-Copy the example file:
+Copy the example file and fill it in:
 
 ```bash
 cp .env.example .env.local
 ```
 
-Set:
-
 ```dotenv
 SKIM_REPO_PATH=/absolute/path/to/skim-demo
+CONFLICT_MODEL_PROVIDER=openai
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5.6-terra
+DEEPSEEK_API_KEY=
+DEEPSEEK_MODEL=deepseek-flash
 ```
 
 - `SKIM_REPO_PATH` is required. It must be an absolute path to the root of an existing Git repository and must not be this application repository or a descendant of it.
-- `OPENAI_API_KEY` is optional for issue #2. Blank values are treated as unset. The application does not initialize the OpenAI SDK or expose this value to client code.
-- `OPENAI_MODEL` defaults to `gpt-5.6-terra`; blank values are rejected.
+- `CONFLICT_MODEL_PROVIDER` selects the conflict analyser, `openai` or `deepseek`. It defaults to `openai`.
+- Only the selected provider's key is read. Both keys may be present at once; `CONFLICT_MODEL_PROVIDER` alone
+  decides which one is invoked, and the other is never sent a request. Blank values are treated as unset, and a
+  missing key for the selected provider fails with `MODEL_PROVIDER_CREDENTIALS_MISSING` at the point an
+  analysis would run, without touching the managed repository. Imports whose scopes do not overlap never
+  construct an adapter, so they still work without any key.
+- Changing `CONFLICT_MODEL_PROVIDER` changes only the adapter used for analysis. Import, agent, transaction,
+  dashboard, and Undo behaviour are unaffected, and the test suite asserts that.
+- `OPENAI_MODEL` defaults to `gpt-5.6-terra` and `DEEPSEEK_MODEL` to `deepseek-flash`; blank values are rejected.
+- Neither key is exposed to client code.
 
-`pnpm dev` and `pnpm start` validate runtime configuration before launching Next.js. `pnpm build` intentionally does not depend on runtime environment values.
+`pnpm dev` and `pnpm start` validate runtime configuration before launching Next.js. Because that check runs
+before Next.js starts, the wrapper loads the same env files Next.js would, in the same order: for `pnpm dev`
+`.env.development.local`, `.env.local`, `.env.development`, `.env`, and for `pnpm start` the `production`
+equivalents. A variable that is already set in the real environment always wins, so a one-off run can override
+the file:
+
+```bash
+SKIM_REPO_PATH=/absolute/path/to/other-repo pnpm dev
+```
+
+`pnpm build` intentionally does not depend on runtime environment values.
 
 ## Development
 
@@ -90,15 +114,28 @@ Playwright uses Chromium. If the browser is not installed yet, install it once w
 pnpm exec playwright install chromium
 ```
 
-`pnpm test:all` runs linting, type checking, Vitest, Playwright, and the production build in sequence.
+**`pnpm test:all` is the one command that verifies the project.** It runs linting, type checking, the unit and
+integration suites, the browser suite, and the production build in sequence.
 
-Import tests run offline against locally built Git fixtures. One additional test imports the pinned
-`anthropics/skills` commit over the network and checks it against the vendored fixture hashes. It is skipped
-unless you opt in:
+The conflict-analysis contract is exercised through mocked OpenAI *and* mocked DeepSeek adapters, in the
+integration suite and again in the browser suite, so CI never needs a provider key or provider network access.
+Two checks are opt-in:
 
 ```bash
+# Import the pinned anthropics/skills commit over the network and compare it to the vendored fixture hashes.
 SKIM_NETWORK_TESTS=1 pnpm test
+
+# Run one real analysis against a live provider. Use openai or deepseek.
+SKIM_LIVE_PROVIDER=openai OPENAI_API_KEY=sk-... pnpm test
 ```
+
+`tests/integration/end-to-end.test.ts` plays the documented runbook end to end and asserts that the two
+providers, and a repeated run against a fresh managed repository, produce identical observable output: the
+same cited conflict, the same install and recovery commits, and the same `pnpm add` → `npm install` →
+`pnpm add` agent trace.
+
+The browser suite imports the demo skill from `https://github.com/JunzhL/skim.git`, so it needs network access
+to GitHub even though it never reaches a model provider.
 
 ## Pinned skill imports
 
@@ -219,21 +256,43 @@ present and nothing when no scopes overlap, so a model adapter is never reached 
 pnpm and npm skills produce exactly one candidate over the shared `dependency-management` task, and the pinned
 `algorithmic-art` fixture declares no scopes, so it never becomes a package-manager candidate.
 
-## Reserved API contracts
+## HTTP API
 
-Implemented:
+All endpoints share the `ApiError` schema and are validated with the Zod contracts in `src/lib/contracts/`.
 
-- `GET /api/registry` returns the registry at the managed repository HEAD.
-- `POST /api/agents/:id/reload` loads the current HEAD into that agent.
-- `POST /api/agents/:id/run` runs a dependency-addition task and returns the `AgentRun`.
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/registry` | The registry at the managed repository HEAD |
+| `GET /api/transactions` | Committed install and Undo transactions |
+| `POST /api/imports/preview` | Preview a pinned import, with conflict reports and the proposed diff |
+| `POST /api/transactions/install` | Confirm a preview with `keep-existing`, `activate-incoming`, or `cancel` |
+| `POST /api/transactions/:id/undo` | Create a recovery commit, or return a three-way diff when it is unsafe |
+| `GET /api/agents/:id` | An agent's loaded configuration version and active skills |
+| `POST /api/agents/:id/reload` | Load the current HEAD into that agent |
+| `POST /api/agents/:id/run` | Run a dependency-addition task and return the `AgentRun` |
 
-Issue #2 defines typed Zod request/response schemas without route handlers for:
+Import URLs must use `https:`. A `file://` or `git@` URL is rejected at the API boundary, even though the
+importer library itself accepts `file://` for tests and local fixtures.
 
-- `GET /api/transactions`
-- `POST /api/imports/preview`
-- `POST /api/transactions/install`
-- `POST /api/transactions/:id/undo`
-- `POST /api/agents/:id/reload`
-- `POST /api/agents/:id/run`
+## Scope
 
-All reserved endpoints share the `ApiError` schema.
+Delivered, and covered by `pnpm test:all`:
+
+- A Next.js dashboard backed by an independent Git repository chosen with `SKIM_REPO_PATH`.
+- Pinned, whole-directory skill imports with provenance, per-file SHA-256 hashes, and license detection.
+- A registry derived from the committed tree at HEAD, so every agent reads one configuration version.
+- Deterministic structural validation, then scope-based conflict candidates, then an evidence-backed
+  conflict report from OpenAI or DeepSeek with every citation verified against the real files.
+- Atomic install transactions with a reviewable diff and an explicit confirmation step.
+- Undo as a new recovery commit, with a three-way diff instead of a silent overwrite when an affected file
+  changed.
+- Two reloadable demo agents whose package-manager command comes from committed skill content and whose tool
+  calls are intercepted rather than executed.
+
+Deliberately not built:
+
+- Cloud deployment, hosted persistence, and any Cloudflare or Huawei submission material.
+- Adapters for third-party agent platforms, and general-purpose command execution.
+- Automatic hot reload, unattended conflict resolution, and automatic rewriting of skill instructions.
+- Local-directory, branch, and tag imports — a skill is always pinned to one commit.
+- A searchable public skill marketplace.

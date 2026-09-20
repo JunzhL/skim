@@ -1,10 +1,26 @@
 import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 import { validateRuntimeConfig } from "../src/lib/runtime-config.ts";
 
 const [command, ...args] = process.argv.slice(2);
 if (command !== "dev" && command !== "start") {
   console.error("Usage: start-next.mjs <dev|start> [next arguments]");
   process.exit(2);
+}
+
+// Next.js loads these files itself, but only inside the child process. Validation
+// runs first, so the wrapper has to load them too. process.loadEnvFile never
+// overwrites a variable that is already set, so the real environment wins and the
+// files keep Next's own precedence order.
+const mode = command === "dev" ? "development" : "production";
+for (const file of [`.env.${mode}.local`, ".env.local", `.env.${mode}`, ".env"]) {
+  try {
+    process.loadEnvFile(resolve(process.cwd(), file));
+  } catch (error) {
+    if (error.code === "ENOENT") continue;
+    console.error(`Could not read ${file}: ${error.message}`);
+    process.exit(1);
+  }
 }
 
 try {
