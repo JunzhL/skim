@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rewriteRelativeImportExtensions": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "outDir": "dist",
+    "declaration": true,
+    "sourceMap": false,
+    "incremental": false,
+    "plugins": []
+  },
+  "include": ["src/lib/init.ts", "src/lib/runtime-config.ts", "src/lib/package-root.ts", "src/lib/errors.ts"]
+}

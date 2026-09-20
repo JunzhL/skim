@@ -37,14 +37,27 @@ describe("runtime configuration", () => {
     expect(() => validateRuntimeConfig({ SKIM_REPO_PATH: plain }, { appRoot: root })).toThrow(/root of an existing Git repository/);
   });
 
-  it("rejects the app repository and descendants", () => {
+  it("rejects the package directory and repositories nested inside it", () => {
     const root = tempRoot();
     const app = join(root, "app");
     gitRepo(app);
-    const child = join(app, "child");
-    mkdirSync(child);
-    expect(() => validateRuntimeConfig({ SKIM_REPO_PATH: app }, { appRoot: app })).toThrow(/application repository/);
-    expect(() => validateRuntimeConfig({ SKIM_REPO_PATH: child }, { appRoot: app })).toThrow(/application repository/);
+    const nested = join(app, "nested");
+    gitRepo(nested);
+    expect(() => validateRuntimeConfig({ SKIM_REPO_PATH: app }, { appRoot: app })).toThrow(/package directory/);
+    expect(() => validateRuntimeConfig({ SKIM_REPO_PATH: nested }, { appRoot: app })).toThrow(/package directory/);
+  });
+
+  it("accepts the repository that contains an installed copy of the package", () => {
+    const root = tempRoot();
+    const consumer = join(root, "consumer");
+    gitRepo(consumer);
+    const installed = join(consumer, "node_modules", "skimctl");
+    mkdirSync(installed, { recursive: true });
+
+    // This is the published layout: the package lives inside the repository it manages.
+    expect(validateRuntimeConfig({ SKIM_REPO_PATH: consumer }, { appRoot: installed }).repoPath).toBe(
+      realpathSync(consumer),
+    );
   });
 
   it("accepts both provider credentials and defaults to OpenAI", () => {

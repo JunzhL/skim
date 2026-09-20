@@ -7,6 +7,30 @@ change behaviour, and undo the whole thing with a recovery commit that keeps the
 The 90-second walkthrough, with the expected screen and the observable evidence at each step, is in
 [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
+## Use it in your own repository
+
+```bash
+npm install -D skimctl      # or: pnpm add -D skimctl
+
+cd your-repo
+npx skimctl init            # creates agents.yaml and skills/
+npx skimctl                 # dashboard on http://localhost:3000
+```
+
+`skimctl` manages **the repository you are standing in**. It resolves the Git root of the working
+directory, which `--repo <path>` or `SKIM_REPO_PATH` can override, and reads `.env.local` from that
+repository for the conflict-analysis provider credentials. It refuses only one target: its own package
+directory, so an installed copy can never rewrite itself.
+
+| Command | What it does |
+| --- | --- |
+| `skimctl init` | Writes a starter `agents.yaml` and `skills/`. Never overwrites, so it is safe to repeat |
+| `skimctl` / `skimctl start` | Serves the dashboard. `--port <n>` changes the port |
+| `skimctl --help` | Usage |
+
+Node 22.18 or newer. Conflict analysis needs a key for the selected provider; imports whose scopes do not
+overlap anything installed need no key at all.
+
 ## Prerequisites
 
 - Node.js `>=22.13 <23`
@@ -294,6 +318,25 @@ rest. The listing is sorted by path, so the same commit always produces the same
 
 All three paths converge on `POST /api/imports/preview`, so they share one set of rules — HTTPS only, a full
 40-character commit, and no change to the managed repository until confirmation.
+
+## Publishing
+
+The package ships the built dashboard plus a compiled CLI, and nothing else:
+
+```bash
+pnpm build          # .next, the dashboard the CLI serves
+pnpm build:cli      # dist/, the JavaScript the CLI imports
+npm pack --dry-run  # inspect the tarball
+npm publish
+```
+
+`prepublishOnly` runs `pnpm test:all` and `pnpm build:cli`, so a publish cannot go out on a red suite.
+
+Two constraints shape this layout. Node refuses to strip types for files under `node_modules`, so the CLI
+cannot import the TypeScript sources the rest of the app uses; `tsconfig.build.json` compiles the four modules
+it needs into `dist/`. And the `files` allowlist names specific `.next` subpaths rather than the whole
+directory, because the Turbopack cache and sourcemaps are an order of magnitude larger than the build output
+worth shipping.
 
 ## Scope
 

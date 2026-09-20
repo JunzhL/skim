@@ -174,7 +174,7 @@ export function importPinnedSkill(options: ImportPinnedSkillOptions): ImportedSk
     const slug = frontmatter.name;
     const relativeDestination = `${skillsDirectory}/${slug}`;
     const destination = join(options.destinationRoot, skillsDirectory, slug);
-    if (existsSync(destination)) {
+    if (existsSync(/*turbopackIgnore: true*/ destination)) {
       throw new SkimError("DESTINATION_EXISTS", `${relativeDestination} already exists in the managed repository`, { path: relativeDestination, slug });
     }
 
@@ -183,8 +183,8 @@ export function importPinnedSkill(options: ImportPinnedSkillOptions): ImportedSk
       .map(([path, content]) => ({ path, hash: sha256(content) }))
       .sort((a, b) => (a.path < b.path ? -1 : 1));
 
-    mkdirSync(join(options.destinationRoot, skillsDirectory), { recursive: true });
-    const staging = mkdtempSync(join(options.destinationRoot, skillsDirectory, `.skim-import-${slug}-`));
+    mkdirSync(/*turbopackIgnore: true*/ join(options.destinationRoot, skillsDirectory), { recursive: true });
+    const staging = mkdtempSync(/*turbopackIgnore: true*/ join(options.destinationRoot, skillsDirectory, `.skim-import-${slug}-`));
     try {
       for (const entry of entries) {
         const target = join(staging, ...entry.path.split("/"));

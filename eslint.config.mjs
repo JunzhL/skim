@@ -13,5 +13,6 @@ export default defineConfig([
     "playwright-report/**",
     "test-results/**",
     "fixtures/pinned-skills/**",
+    "dist/**",
   ]),
 ]);

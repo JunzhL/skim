@@ -33,3 +33,12 @@ next-env.d.ts
 
 # The user-global ignore file excludes lib/; src/lib is first-party application source.
 !src/lib/
+
+# local verification artefacts
+/output
+/.playwright-cli
+/.pnpm-store
+
+# published package output
+/dist
+*.tgz
