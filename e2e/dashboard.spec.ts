@@ -8,6 +8,7 @@ import { setupDemoRepository } from "../src/lib/demo-setup";
 
 let root: string;
 let repository: string;
+let serverGeneration = 0;
 let server: ChildProcess;
 
 const SOURCE_URL = "https://github.com/JunzhL/skim.git";
@@ -55,7 +56,8 @@ async function stopServer(): Promise<void> {
 }
 
 async function startServer(provider: Provider): Promise<void> {
-  repository = setupDemoRepository(join(root, `demo-${provider}`), {
+  // A unique directory per call, so restarting mid-suite always gets a clean managed repository.
+  repository = setupDemoRepository(join(root, `demo-${provider}-${serverGeneration++}`), {
     appRoot: process.cwd(),
   });
 
@@ -207,6 +209,26 @@ async function installDashboardMocks(
       });
     }
 
+    if (method === "GET" && pathname === "/api/catalog") {
+      return json(route, {
+        entries: [
+          {
+            id: "npm-workflow",
+            name: "NPM Workflow",
+            description: "Uses npm for JavaScript dependency changes.",
+            license: "unspecified",
+            tags: ["dependency-management"],
+            source: {
+              type: "git",
+              url: SOURCE_URL,
+              commit: SOURCE_COMMIT,
+              subdirectory: "fixtures/authored-skills/npm-workflow",
+            },
+          },
+        ],
+      });
+    }
+
     if (method === "GET" && pathname === "/api/transactions") {
       if (failRefreshAfterMutation && phase !== "initial") {
         return json(route, { code: "TRANSACTION_UNAVAILABLE", message: "history refresh failed" }, 500);
@@ -341,6 +363,7 @@ async function installDashboardMocks(
 }
 
 async function fillPreviewForm(page: Page) {
+  await page.getByRole("tab", { name: "Manual" }).click();
   await page.getByLabel("Git URL").fill(SOURCE_URL);
   await page.getByLabel("Commit SHA").fill(SOURCE_COMMIT);
   await page.getByLabel("Skill subdirectory").fill("fixtures/authored-skills/npm-workflow");
@@ -518,4 +541,44 @@ test("renders an Undo three-way conflict without hiding current repository state
   await expect(page.getByTestId("undo-conflict")).toContainText("npm enabled");
   await expect(page.getByTestId("undo-conflict")).toContainText("custom later edit");
   await expect(page.getByTestId("skill-npm-workflow")).toContainText("Active");
+});
+
+test("installs a featured store skill without typing a commit", async ({ page }) => {
+  test.setTimeout(120_000);
+  await stopServer();
+  await startServer("openai");
+  await page.goto("/");
+
+  await expect(page.getByTestId("skill-package-manager-policy")).toContainText("Active");
+  const card = page.getByTestId("catalog-npm-workflow");
+  await expect(card).toContainText("NPM Workflow");
+  await expect(card).toContainText("fixtures/authored-skills/npm-workflow");
+
+  await card.getByRole("button", { name: "Preview" }).click();
+  await expect(page.getByRole("button", { name: "Activate incoming" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/use `npm install`/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Activate incoming" }).click();
+  await page.getByRole("button", { name: "Review resolution" }).click();
+  await page.getByRole("button", { name: "Confirm activate-incoming" }).click();
+  await expect(page.getByTestId("skill-npm-workflow")).toContainText("Active", { timeout: 60_000 });
+
+  // The card is now a no-op: the skill is already installed.
+  await expect(page.getByTestId("catalog-npm-workflow").getByRole("button", { name: "Installed" })).toBeDisabled();
+});
+
+test("lists the skills in any pinned repository", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto("/");
+  await page.getByTestId("skill-package-manager-policy").waitFor();
+
+  await page.getByRole("tab", { name: "Browse a repository" }).click();
+  await page.getByLabel("Repository URL").fill("https://github.com/anthropics/skills.git");
+  await page.getByLabel("Repository commit SHA").fill("34040c9c568585f6929bedeaad110ad08f079624");
+  await page.getByRole("button", { name: "List skills" }).click();
+
+  await expect(page.getByTestId("browse-results")).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByTestId("browsed-algorithmic-art")).toContainText("skills/algorithmic-art");
+  await expect(page.getByTestId("browsed-algorithmic-art")).toContainText("Apache-2.0");
+  await expect(page.locator('[data-testid^="browsed-"]')).not.toHaveCount(0);
 });

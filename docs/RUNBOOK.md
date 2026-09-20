@@ -47,30 +47,28 @@ Click **Run** on both agents.
 **Evidence:** each card prints `pnpm add zod` with `lockfile pnpm-lock.yaml` and `run config <sha>`. No
 package manager actually runs — the call is intercepted in a throwaway workspace.
 
-### 2 · Import a pinned skill and read the conflict (0:15–0:40)
+### 2 · Pick a skill from the store and read the conflict (0:15–0:40)
 
-In **Preview a pinned skill**, fill in:
+In the **Add a skill** panel, stay on the **Featured** tab and click **Preview** on the **NPM Workflow** card.
 
-| Field | Value |
-| --- | --- |
-| Git URL | `https://github.com/JunzhL/skim.git` |
-| Commit SHA | `7f6a8780bf81bccb04ea88928b1a1314298f59fe` |
-| Skill subdirectory | `fixtures/authored-skills/npm-workflow` |
+> "Every entry is pinned to an exact commit. Picking one is the same import as typing the commit by hand."
 
-Click **Generate preview**.
-
-> "A full 40-character commit, not a branch. The same input always produces the same bytes."
+The card shows what is being installed before anything happens: the subdirectory, the short commit, the
+detected license, and the scope tags. The **Browse a repository** tab lists the skills in any pinned commit if
+you want to show the catalogue is not hard-coded, and **Manual** still takes a URL, commit, and subdirectory
+directly.
 
 The Review panel becomes **Incoming: NPM Workflow** with a conflict card:
 
-- scenario **Adding a JavaScript dependency**, the provider label (`OpenAI · mock-openai` or
-  `DeepSeek · …`), and a confidence percentage;
+- scenario, the provider label (`OpenAI · …` or `DeepSeek · …`), and a confidence percentage;
 - two quoted citations side by side, each with its own file and line range:
   `npm-workflow · SKILL.md:16–16` — "use `npm install` and update `package-lock.json`"
   `package-manager-policy · SKILL.md:16–16` — "use `pnpm add` and keep `pnpm-lock.yaml` updated"
 
-**Evidence:** every quote and line range is checked against the real files before the report is shown, and the
-header still reads `base <sha>` — the preview changed nothing.
+The scenario wording comes from the model, so it varies between runs and between providers. The citations do
+not: every quote and line range is checked against the real files before the report is shown.
+
+**Evidence:** the header still reads `base <sha>` — the preview changed nothing.
 
 ### 3 · Choose a resolution, with confirmation (0:40–0:55)
 
@@ -139,8 +137,8 @@ repeated run produce byte-identical observable output.
 ## Rehearsing without a provider key
 
 `pnpm test:e2e` drives this exact path against a mocked provider, so it is the safest rehearsal and needs no
-API key. To rehearse the dashboard by hand without one, point the import at a skill whose scopes do not
-overlap anything installed — for example `fixtures/pinned-skills/algorithmic-art` at the same commit. No
+API key. To rehearse the dashboard by hand without one, pick a store entry whose scopes do not
+overlap anything installed — **Algorithmic Art** on the Featured tab is there for exactly this. No
 overlap means no conflict analysis, so no adapter is constructed and no key is read. The conflict half of the
 demo does need a working key for the selected provider.
 

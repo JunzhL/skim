@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "id": "npm-workflow",
+      "name": "NPM Workflow",
+      "description": "Uses npm for JavaScript dependency changes. Conflicts with Package Manager Policy over the shared dependency-management task.",
+      "license": "unspecified",
+      "tags": ["dependency-management", "demo"],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/JunzhL/skim.git",
+        "commit": "7f6a8780bf81bccb04ea88928b1a1314298f59fe",
+        "subdirectory": "fixtures/authored-skills/npm-workflow"
+      }
+    },
+    {
+      "id": "algorithmic-art",
+      "name": "Algorithmic Art",
+      "description": "Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Declares no scopes, so it never becomes a conflict candidate.",
+      "license": "Apache-2.0",
+      "tags": ["creative", "no-conflict"],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/algorithmic-art"
+      }
+    },
+    {
+      "id": "mcp-builder",
+      "name": "MCP Builder",
+      "description": "Guide for creating high-quality MCP servers that let models interact with external services through well-designed tools.",
+      "license": "Apache-2.0",
+      "tags": ["tooling"],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/mcp-builder"
+      }
+    },
+    {
+      "id": "webapp-testing",
+      "name": "Webapp Testing",
+      "description": "Toolkit for interacting with and testing local web applications using Playwright, including UI debugging and capture.",
+      "license": "Apache-2.0",
+      "tags": ["testing"],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/webapp-testing"
+      }
+    }
+  ]
+}

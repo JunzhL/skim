@@ -43,7 +43,14 @@ function sha256(content: Buffer): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-function normalizeSource(source: PinnedGitSource, allowedProtocols: string[]): PinnedGitSource {
+export function assertAllowedGitUrl(url: string, allowedProtocols: string[] = DEFAULT_ALLOWED_PROTOCOLS): void {
+  const protocol = new URL(url).protocol;
+  if (!allowedProtocols.includes(protocol)) {
+    throw new SkimError("INVALID_SOURCE", `Unsupported Git URL protocol: ${protocol}`, { url, allowedProtocols });
+  }
+}
+
+export function normalizePinnedSource(source: PinnedGitSource, allowedProtocols: string[] = DEFAULT_ALLOWED_PROTOCOLS): PinnedGitSource {
   const parsed = pinnedGitSourceSchema.safeParse(source);
   if (!parsed.success) {
     throw new SkimError("INVALID_SOURCE", "Import source is not a pinned Git URL, commit, and subdirectory", {
@@ -51,17 +58,18 @@ function normalizeSource(source: PinnedGitSource, allowedProtocols: string[]): P
     });
   }
 
-  const protocol = new URL(parsed.data.url).protocol;
-  if (!allowedProtocols.includes(protocol)) {
-    throw new SkimError("INVALID_SOURCE", `Unsupported Git URL protocol: ${protocol}`, { url: parsed.data.url, allowedProtocols });
-  }
+  assertAllowedGitUrl(parsed.data.url, allowedProtocols);
   if (parsed.data.subdirectory.split("/").includes(".git")) {
     throw new SkimError("INVALID_SOURCE", "Skill subdirectory must not contain a .git segment", { subdirectory: parsed.data.subdirectory });
   }
   return parsed.data;
 }
 
-function fetchPinnedCommit(source: PinnedGitSource, timeoutMs: number): string {
+/** Fetches exactly one commit into a temporary bare repository. Callers must remove the returned path. */
+export function fetchPinnedCommit(
+  source: Pick<PinnedGitSource, "url" | "commit">,
+  timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS,
+): string {
   const checkout = mkdtempSync(join(tmpdir(), "skim-fetch-"));
   const init = tryGit(checkout, ["init", "-q", "--bare"]);
   if (!init.ok) {
@@ -139,7 +147,7 @@ function readSafeEntries(entries: TreeEntry[], tree: TreeSource, subdirectory: s
 }
 
 export function importPinnedSkill(options: ImportPinnedSkillOptions): ImportedSkill {
-  const source = normalizeSource(options.source, options.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS);
+  const source = normalizePinnedSource(options.source, options.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS);
   const skillsDirectory = options.skillsDirectory ?? "skills";
   const checkout = fetchPinnedCommit(source, options.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS);
 

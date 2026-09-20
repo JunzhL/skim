@@ -295,7 +295,9 @@ export function createDeepSeekConflictAdapter(
             ],
             response_format: { type: "json_object" },
             stream: false,
-            max_tokens: 2_000,
+            // deepseek-flash is a reasoning model: reasoning_tokens count against max_tokens,
+            // so a 2k budget is exhausted before the structured report is emitted.
+            max_tokens: 8_000,
           }),
         },
         { ...options, provider: "deepseek" },

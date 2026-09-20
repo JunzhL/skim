@@ -3,6 +3,9 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AgentRun,
+  BrowseCatalogResponse,
+  BrowsedSkill,
+  CatalogEntry,
   InstallPreview,
   PreviewResolution,
   SkillRecord,
@@ -82,6 +85,14 @@ function errorPresentation(error: DashboardErrorState) {
   return { title: "Transaction error", tone: "border-rose-300 bg-rose-50 text-rose-950" };
 }
 
+type StoreTab = "featured" | "browse" | "manual";
+
+const STORE_TABS: { id: StoreTab; label: string }[] = [
+  { id: "featured", label: "Featured" },
+  { id: "browse", label: "Browse a repository" },
+  { id: "manual", label: "Manual" },
+];
+
 function SectionHeading({ eyebrow, title, detail }: { eyebrow: string; title: string; detail?: string }) {
   return (
     <div className="mb-5 flex items-start justify-between gap-4">
@@ -130,6 +141,13 @@ export function Dashboard() {
   const [gitUrl, setGitUrl] = useState("");
   const [commit, setCommit] = useState("");
   const [subdirectory, setSubdirectory] = useState("");
+
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [storeTab, setStoreTab] = useState<StoreTab>("featured");
+  const [browseUrl, setBrowseUrl] = useState("https://github.com/anthropics/skills.git");
+  const [browseCommit, setBrowseCommit] = useState("34040c9c568585f6929bedeaad110ad08f079624");
+  const [browsedSkills, setBrowsedSkills] = useState<BrowsedSkill[] | null>(null);
+  const [browsePending, setBrowsePending] = useState(false);
   const [task, setTask] = useState("add zod");
 
   const [preview, setPreview] = useState<InstallPreview | null>(null);
@@ -161,6 +179,9 @@ export function Dashboard() {
           refreshRepository(),
           refreshAgent("builder"),
           refreshAgent("reviewer"),
+          requestJson<{ entries: CatalogEntry[] }>("/api/catalog")
+            .then((response) => setCatalog(response.entries))
+            .catch(() => setCatalog([])),
         ]);
       } catch (caught) {
         if (!cancelled) {
@@ -177,6 +198,11 @@ export function Dashboard() {
       cancelled = true;
     };
   }, [refreshAgent, refreshRepository]);
+
+  const installedSkillIds = useMemo(
+    () => new Set((registry?.skills ?? []).map((skill) => skill.id)),
+    [registry],
+  );
 
   const undoneInstallIds = useMemo(
     () => new Set(
@@ -209,8 +235,7 @@ export function Dashboard() {
     }
   }
 
-  async function createPreview(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function previewSource(source: { url: string; commit: string; subdirectory: string }) {
     setPreviewPending(true);
     setError(null);
     setSuccess(null);
@@ -225,9 +250,9 @@ export function Dashboard() {
         body: JSON.stringify({
           source: {
             type: "git",
-            url: gitUrl.trim(),
-            commit: commit.trim().toLowerCase(),
-            subdirectory: subdirectory.trim(),
+            url: source.url.trim(),
+            commit: source.commit.trim().toLowerCase(),
+            subdirectory: source.subdirectory.trim(),
           },
         }),
       });
@@ -236,6 +261,30 @@ export function Dashboard() {
       presentError(caught);
     } finally {
       setPreviewPending(false);
+    }
+  }
+
+  async function createPreview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await previewSource({ url: gitUrl, commit, subdirectory });
+  }
+
+  async function browseRepository(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBrowsePending(true);
+    setError(null);
+    setBrowsedSkills(null);
+
+    try {
+      const response = await requestJson<BrowseCatalogResponse>("/api/catalog/browse", {
+        method: "POST",
+        body: JSON.stringify({ url: browseUrl.trim(), commit: browseCommit.trim().toLowerCase() }),
+      });
+      setBrowsedSkills(response.skills);
+    } catch (caught) {
+      presentError(caught);
+    } finally {
+      setBrowsePending(false);
     }
   }
 
@@ -422,51 +471,200 @@ export function Dashboard() {
               </section>
 
               <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-                <SectionHeading eyebrow="Import" title="Preview a pinned skill" detail="Nothing changes until confirmation." />
-                <form className="space-y-4" onSubmit={createPreview}>
-                  <label className="block text-sm font-medium text-neutral-700">
-                    Git URL
-                    <input
-                      aria-label="Git URL"
-                      type="url"
-                      required
-                      value={gitUrl}
-                      onChange={(event) => setGitUrl(event.target.value)}
-                      placeholder="https://github.com/org/repo.git"
-                      className="mt-1.5 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-sm shadow-inner"
-                    />
-                  </label>
-                  <label className="block text-sm font-medium text-neutral-700">
-                    Commit SHA
-                    <input
-                      aria-label="Commit SHA"
-                      required
-                      pattern="[0-9a-fA-F]{40}"
-                      value={commit}
-                      onChange={(event) => setCommit(event.target.value)}
-                      placeholder="40-character commit"
-                      className="mt-1.5 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 font-mono text-sm shadow-inner"
-                    />
-                  </label>
-                  <label className="block text-sm font-medium text-neutral-700">
-                    Skill subdirectory
-                    <input
-                      aria-label="Skill subdirectory"
-                      required
-                      value={subdirectory}
-                      onChange={(event) => setSubdirectory(event.target.value)}
-                      placeholder="skills/npm-workflow"
-                      className="mt-1.5 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 font-mono text-sm shadow-inner"
-                    />
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={previewPending}
-                    className="w-full rounded-lg bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {previewPending ? "Analyzing…" : "Generate preview"}
-                  </button>
-                </form>
+                <SectionHeading eyebrow="Store" title="Add a skill" detail="Nothing changes until confirmation." />
+
+                <div role="tablist" aria-label="Skill store" className="mb-4 flex gap-1 rounded-lg bg-neutral-100 p-1">
+                  {STORE_TABS.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={storeTab === tab.id}
+                      onClick={() => setStoreTab(tab.id)}
+                      className={`flex-1 rounded-md px-2 py-1.5 text-xs font-semibold transition ${
+                        storeTab === tab.id ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-500 hover:text-neutral-800"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {storeTab === "featured" ? (
+                  <div className="space-y-3">
+                    {catalog.length === 0 ? (
+                      <p className="rounded-lg bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
+                        No curated skills are available.
+                      </p>
+                    ) : (
+                      catalog.map((entry) => {
+                        const installed = installedSkillIds.has(entry.id);
+                        return (
+                          <article
+                            key={entry.id}
+                            data-testid={`catalog-${entry.id}`}
+                            className="rounded-xl border border-neutral-200 p-3.5"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="font-medium text-neutral-900">{entry.name}</p>
+                                <p className="font-mono text-xs text-neutral-500">
+                                  {entry.source.subdirectory} · {shortCommit(entry.source.commit)}
+                                </p>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
+                                {entry.license}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-sm leading-relaxed text-neutral-600">{entry.description}</p>
+                            <div className="mt-3 flex items-center justify-between gap-3">
+                              <div className="flex flex-wrap gap-1.5">
+                                {entry.tags.map((tag) => (
+                                  <span key={tag} className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-600">
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                              <button
+                                type="button"
+                                disabled={previewPending || installed}
+                                onClick={() => void previewSource(entry.source)}
+                                className="shrink-0 rounded-lg bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {installed ? "Installed" : "Preview"}
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })
+                    )}
+                  </div>
+                ) : null}
+
+                {storeTab === "browse" ? (
+                  <div className="space-y-4">
+                    <form className="space-y-3" onSubmit={browseRepository}>
+                      <label className="block text-sm font-medium text-neutral-700">
+                        Repository URL
+                        <input
+                          aria-label="Repository URL"
+                          type="url"
+                          required
+                          value={browseUrl}
+                          onChange={(event) => setBrowseUrl(event.target.value)}
+                          placeholder="https://github.com/org/repo.git"
+                          className="mt-1.5 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-sm shadow-inner"
+                        />
+                      </label>
+                      <label className="block text-sm font-medium text-neutral-700">
+                        Commit SHA
+                        <input
+                          aria-label="Repository commit SHA"
+                          required
+                          pattern="[0-9a-fA-F]{40}"
+                          value={browseCommit}
+                          onChange={(event) => setBrowseCommit(event.target.value)}
+                          placeholder="40-character commit"
+                          className="mt-1.5 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 font-mono text-sm shadow-inner"
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={browsePending}
+                        className="w-full rounded-lg bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {browsePending ? "Listing…" : "List skills"}
+                      </button>
+                    </form>
+
+                    {browsedSkills === null ? null : browsedSkills.length === 0 ? (
+                      <p className="rounded-lg bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
+                        No SKILL.md directories at that commit.
+                      </p>
+                    ) : (
+                      <div data-testid="browse-results" className="max-h-96 space-y-2 overflow-y-auto pr-1">
+                        <p className="text-xs text-neutral-500">
+                          {browsedSkills.length} skills at {shortCommit(browseCommit)}
+                        </p>
+                        {browsedSkills.map((skill) => (
+                          <article
+                            key={skill.subdirectory}
+                            data-testid={`browsed-${skill.id}`}
+                            className="rounded-xl border border-neutral-200 p-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-neutral-900">{skill.name}</p>
+                                <p className="truncate font-mono text-xs text-neutral-500">{skill.subdirectory}</p>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={previewPending || installedSkillIds.has(skill.id)}
+                                onClick={() =>
+                                  void previewSource({ url: browseUrl, commit: browseCommit, subdirectory: skill.subdirectory })
+                                }
+                                className="shrink-0 rounded-lg bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {installedSkillIds.has(skill.id) ? "Installed" : "Preview"}
+                              </button>
+                            </div>
+                            <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-neutral-600">{skill.description}</p>
+                            <p className="mt-1.5 text-[11px] text-neutral-500">
+                              {skill.license} · {skill.fileCount} files
+                            </p>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+
+                {storeTab === "manual" ? (
+                  <form className="space-y-4" onSubmit={createPreview}>
+                    <label className="block text-sm font-medium text-neutral-700">
+                      Git URL
+                      <input
+                        aria-label="Git URL"
+                        type="url"
+                        required
+                        value={gitUrl}
+                        onChange={(event) => setGitUrl(event.target.value)}
+                        placeholder="https://github.com/org/repo.git"
+                        className="mt-1.5 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-sm shadow-inner"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium text-neutral-700">
+                      Commit SHA
+                      <input
+                        aria-label="Commit SHA"
+                        required
+                        pattern="[0-9a-fA-F]{40}"
+                        value={commit}
+                        onChange={(event) => setCommit(event.target.value)}
+                        placeholder="40-character commit"
+                        className="mt-1.5 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 font-mono text-sm shadow-inner"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium text-neutral-700">
+                      Skill subdirectory
+                      <input
+                        aria-label="Skill subdirectory"
+                        required
+                        value={subdirectory}
+                        onChange={(event) => setSubdirectory(event.target.value)}
+                        placeholder="skills/npm-workflow"
+                        className="mt-1.5 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 font-mono text-sm shadow-inner"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      disabled={previewPending}
+                      className="w-full rounded-lg bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {previewPending ? "Analyzing…" : "Generate preview"}
+                    </button>
+                  </form>
+                ) : null}
               </section>
             </div>
 
