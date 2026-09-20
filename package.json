@@ -1,10 +1,9 @@
 {
-  "name": "skim",
+  "name": "skimctl",
   "version": "0.1.0",
-  "private": true,
   "packageManager": "pnpm@12.4.0",
   "engines": {
-    "node": ">=22.13 <23"
+    "node": ">=22.18"
   },
   "scripts": {
     "dev": "node --experimental-strip-types scripts/start-next.mjs dev --turbopack",
@@ -16,7 +15,9 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:all": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm build",
-    "demo:setup": "node --experimental-strip-types scripts/demo-setup.mjs"
+    "demo:setup": "node --experimental-strip-types scripts/demo-setup.mjs",
+    "prepublishOnly": "pnpm test:all && pnpm build:cli",
+    "build:cli": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "next": "16.3.5",
@@ -37,5 +38,33 @@
     "typescript": "^5.9.0",
     "vitest": "^5.0.0"
   },
-  "type": "module"
+  "type": "module",
+  "description": "Review agent skill changes as Git transactions: pinned imports, cited conflicts, atomic installs, and Undo.",
+  "license": "MIT",
+  "keywords": [
+    "agent",
+    "skills",
+    "SKILL.md",
+    "git",
+    "conflict",
+    "cli"
+  ],
+  "bin": {
+    "skimctl": "bin/skimctl.mjs"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "fixtures/catalog.json",
+    "next.config.ts",
+    "postcss.config.mjs",
+    ".next/BUILD_ID",
+    ".next/*.json",
+    ".next/build/",
+    ".next/server/",
+    ".next/static/",
+    "!.next/**/*.map",
+    "README.md",
+    "docs/RUNBOOK.md"
+  ]
 }

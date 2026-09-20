@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { catalogEntrySchema, commitSchema, type BrowsedSkill, type CatalogEntry } from "../contracts";
 import { SkimError } from "../errors";
+import { packageRoot } from "../package-root.ts";
 import { gitTreeSource } from "../registry/tree-source";
 import { parseSkillFrontmatter } from "../skills/frontmatter";
 import { detectLicense } from "../skills/license";
@@ -27,7 +28,7 @@ export type BrowseRepositoryOptions = {
 };
 
 /** The curated store front. Entries are pinned, so the list is stable across runs. */
-export function readCuratedCatalog(root: string = process.cwd()): CatalogEntry[] {
+export function readCuratedCatalog(root: string = packageRoot()): CatalogEntry[] {
   const path = join(root, ...CATALOG_FILE.split("/"));
 
   let document: unknown;

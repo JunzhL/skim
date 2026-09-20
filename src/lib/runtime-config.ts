@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
+import { packageRoot } from "./package-root.ts";
 
 const optionalSecretSchema = z.string().optional().transform((value) => {
   const trimmed = value?.trim();
@@ -64,15 +65,17 @@ export function validateRuntimeConfig(
   }
 
   const repoPath = realpathSync(requestedPath);
-  const appInput = realpathSync(/*turbopackIgnore: true*/ options.appRoot ?? process.cwd());
-  const appRoot = gitRoot(appInput);
-  if (appRoot && isSameOrDescendant(repoPath, appRoot)) {
-    throw new Error("SKIM_REPO_PATH must not be the application repository or one of its descendants");
-  }
-
   const managedRoot = gitRoot(repoPath);
   if (!managedRoot || managedRoot !== repoPath) {
     throw new Error("SKIM_REPO_PATH must point to the root of an existing Git repository");
+  }
+
+  // Skim must not manage its own source tree. The boundary is this package's directory, not the
+  // working directory: installed under node_modules, the repository being managed is the one the
+  // user is standing in, and that is exactly what should be allowed.
+  const appRoot = realpathSync(/*turbopackIgnore: true*/ options.appRoot ?? packageRoot());
+  if (isSameOrDescendant(repoPath, appRoot)) {
+    throw new Error("SKIM_REPO_PATH must not be the Skill Manager package directory or one of its descendants");
   }
 
   return {

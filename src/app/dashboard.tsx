@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentRun,
   BrowseCatalogResponse,
@@ -44,7 +44,7 @@ class DashboardApiError extends Error {
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body !== undefined) headers.set("content-type", "application/json");
-  const response = await fetch(input, { ...init, headers });
+  const response = await fetch(input, { ...init, headers, signal: init?.signal ?? AbortSignal.timeout(120_000) });
   const body = await response.json().catch(() => null) as
     | { code?: string; message?: string }
     | T
@@ -142,6 +142,12 @@ export function Dashboard() {
   const [commit, setCommit] = useState("");
   const [subdirectory, setSubdirectory] = useState("");
 
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState(false);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("All");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const mutationLock = useRef(false);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [storeTab, setStoreTab] = useState<StoreTab>("featured");
   const [browseUrl, setBrowseUrl] = useState("https://github.com/anthropics/skills.git");
@@ -171,33 +177,45 @@ export function Dashboard() {
     setAgentStatuses((current) => ({ ...current, [agentId]: status }));
   }, []);
 
+  const loadCatalog = useCallback(async () => {
+    try {
+      const response = await requestJson<{ entries: CatalogEntry[] }>("/api/catalog");
+      setCatalog(response.entries);
+      setCatalogError(false);
+    } catch {
+      setCatalogError(true);
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.resolve().then(() => { if (!cancelled) return loadCatalog(); });
+    return () => { cancelled = true; };
+  }, [loadCatalog]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      try {
-        await Promise.all([
-          refreshRepository(),
-          refreshAgent("builder"),
-          refreshAgent("reviewer"),
-          requestJson<{ entries: CatalogEntry[] }>("/api/catalog")
-            .then((response) => setCatalog(response.entries))
-            .catch(() => setCatalog([])),
-        ]);
-      } catch (caught) {
-        if (!cancelled) {
-          const failure = caught instanceof DashboardApiError
-            ? caught
-            : new DashboardApiError("DASHBOARD_LOAD_FAILED", caught instanceof Error ? caught.message : String(caught));
-          setError({ code: failure.code, message: failure.message });
-        }
-      } finally {
-        if (!cancelled) setInitialLoading(false);
+      const results = await Promise.allSettled([
+        refreshRepository(), refreshAgent("builder"), refreshAgent("reviewer"),
+      ]);
+      if (cancelled) return;
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") {
+        setError({ code: "DASHBOARD_LOAD_FAILED", message: failed.reason instanceof Error ? failed.reason.message : String(failed.reason) });
       }
+      setInitialLoading(false);
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshAgent, refreshRepository]);
+    return () => { cancelled = true; };
+  }, [refreshAgent, refreshRepository, loadAttempt]);
+
+  const categories = useMemo(() => ["All", ...new Set(catalog.flatMap((entry) => entry.tags))], [catalog]);
+  const filteredCatalog = useMemo(() => catalog.filter((entry) =>
+    (category === "All" || entry.tags.includes(category)) &&
+    `${entry.name} ${entry.description} ${entry.tags.join(" ")} ${entry.source.url}`.toLowerCase().includes(search.trim().toLowerCase()),
+  ), [catalog, search, category]);
 
   const installedSkillIds = useMemo(
     () => new Set((registry?.skills ?? []).map((skill) => skill.id)),
@@ -236,6 +254,8 @@ export function Dashboard() {
   }
 
   async function previewSource(source: { url: string; commit: string; subdirectory: string }) {
+    if (mutationLock.current) return;
+    mutationLock.current = true;
     setPreviewPending(true);
     setError(null);
     setSuccess(null);
@@ -260,6 +280,7 @@ export function Dashboard() {
     } catch (caught) {
       presentError(caught);
     } finally {
+      mutationLock.current = false;
       setPreviewPending(false);
     }
   }
@@ -289,7 +310,8 @@ export function Dashboard() {
   }
 
   async function confirmResolution() {
-    if (!preview || !resolution) return;
+    if (!preview || !resolution || mutationLock.current) return;
+    mutationLock.current = true;
     setInstallPending(true);
     setError(null);
     setSuccess(null);
@@ -322,6 +344,7 @@ export function Dashboard() {
     } catch (caught) {
       presentError(caught);
     } finally {
+      mutationLock.current = false;
       setInstallPending(false);
     }
   }
@@ -356,6 +379,8 @@ export function Dashboard() {
   }
 
   async function undoTransaction(transactionId: string) {
+    if (mutationLock.current) return;
+    mutationLock.current = true;
     setUndoPending(transactionId);
     setError(null);
     setSuccess(null);
@@ -377,6 +402,7 @@ export function Dashboard() {
     } catch (caught) {
       presentError(caught);
     } finally {
+      mutationLock.current = false;
       setUndoPending(null);
     }
   }
@@ -388,19 +414,23 @@ export function Dashboard() {
   const errorView = error ? errorPresentation(error) : null;
 
   return (
-    <main className="mx-auto min-h-screen max-w-[1500px] px-6 py-8 lg:px-10">
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-5 border-b border-neutral-200 pb-6">
+    <main className="dashboard mx-auto min-h-screen max-w-[1500px] px-6 py-8 lg:px-10">
+      <nav className="workspace-nav" aria-label="Workspace">
+        <a className="wordmark" href="#"> <span className="brand-icon" aria-hidden="true">s</span> skim<span className="wordmark-slash">/</span><span className="workspace-label">Workspace</span></a>
+        <div className="nav-links"><a href="#skill-store">Skill library</a><a href="#agents">Agents</a><a href="#history">History</a></div>
+      </nav>
+      <header className="workspace-header mb-8 flex flex-wrap items-end justify-between gap-5 border-b border-neutral-200 pb-6">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">Skim</p>
+          <p className="workspace-caption">Your agents, thoughtfully equipped.</p>
           <h1 className="mt-2 text-4xl font-semibold tracking-[-0.04em] text-neutral-950">Skill Manager</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-600">
             Review skill changes as Git transactions, prove the behavior on reloadable agents, and recover safely with Undo.
           </p>
         </div>
-        <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
+        <div className="connection-card rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" aria-hidden="true" />
-            Managed repository connected
+            <span className={`h-2.5 w-2.5 rounded-full ${registry ? "bg-emerald-500" : "bg-amber-500"}`} aria-hidden="true" />
+            {initialLoading ? "Connecting to repository…" : registry ? "Managed repository connected" : "Repository unavailable"}
           </div>
           <p className="mt-1 font-mono text-xs text-neutral-500">
             config {initialLoading ? "loading…" : shortCommit(registry?.configurationCommit)}
@@ -408,6 +438,12 @@ export function Dashboard() {
         </div>
       </header>
 
+      {!initialLoading && registry ? <div className="workspace-summary" aria-label="Workspace summary">
+        <span><strong>{registry.skills.length}</strong> installed skills</span>
+        <span><strong>{Object.values(agentStatuses).filter(Boolean).length}</strong> agent sessions</span>
+        <span><strong>{transactions.length}</strong> transactions</span>
+        <span className="summary-note">Preview. Review. Commit.</span>
+      </div> : null}
       {error && errorView ? (
         <div
           role="alert"
@@ -420,7 +456,10 @@ export function Dashboard() {
               <p className="mt-1 text-sm">{error.message}</p>
               <p className="mt-1 font-mono text-[11px] opacity-70">{error.code}</p>
             </div>
-            <button className="text-xs font-semibold underline" onClick={() => setError(null)}>Dismiss</button>
+            <div className="flex gap-3">
+              {error.code === "DASHBOARD_LOAD_FAILED" ? <button className="text-xs font-semibold underline" onClick={() => { setError(null); setInitialLoading(true); setLoadAttempt((attempt) => attempt + 1); }}>Retry workspace</button> : null}
+              <button className="text-xs font-semibold underline" onClick={() => setError(null)}>Dismiss</button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -432,12 +471,13 @@ export function Dashboard() {
       ) : null}
 
       {initialLoading ? (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-8 text-sm text-neutral-500 shadow-sm">
-          Loading repository, transaction history, and agent sessions…
+        <div role="status" aria-label="Loading workspace" className="workspace-loading">
+          <p><span className="loading-spinner" />Loading repository, transaction history, and agent sessions…</p>
+          <div className="loading-grid" aria-hidden="true">{[0, 1, 2, 3].map((item) => <div className="skeleton-panel" key={item}><div className="skeleton skeleton-title" /><div className="skeleton" /><div className="skeleton" /><div className="skeleton skeleton-block" /></div>)}</div>
         </div>
       ) : (
         <>
-          <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
+          <div className="workspace-grid grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
             <div className="space-y-6">
               <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
                 <SectionHeading
@@ -470,7 +510,7 @@ export function Dashboard() {
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+              <section id="skill-store" className="store-panel rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
                 <SectionHeading eyebrow="Store" title="Add a skill" detail="Nothing changes until confirmation." />
 
                 <div role="tablist" aria-label="Skill store" className="mb-4 flex gap-1 rounded-lg bg-neutral-100 p-1">
@@ -491,19 +531,24 @@ export function Dashboard() {
                 </div>
 
                 {storeTab === "featured" ? (
-                  <div className="space-y-3">
-                    {catalog.length === 0 ? (
-                      <p className="rounded-lg bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
-                        No curated skills are available.
-                      </p>
-                    ) : (
-                      catalog.map((entry) => {
+                  <div className="space-y-3" aria-busy={catalogLoading}>
+                    <div className="catalog-tools">
+                      <label className="search-field"><span aria-hidden="true">⌕</span><input aria-label="Search skills" placeholder="Search skills, tools, or workflows…" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+                      <label className="category-field">Category<select aria-label="Skill category" value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((tag) => <option key={tag}>{tag}</option>)}</select></label>
+                    </div>
+                    {catalogLoading ? <div role="status" aria-label="Loading skill library" className="skeleton-panel"><div className="skeleton" /><div className="skeleton skeleton-block" /></div> : catalogError ? <div role="alert" className="catalog-error">The skill library could not be loaded. <button onClick={() => { setCatalogLoading(true); setCatalogError(false); void loadCatalog(); }}>Retry library</button></div> : <p className="catalog-count" aria-live="polite">{filteredCatalog.length} of {catalog.length} curated skills</p>}
+                    {!catalogLoading && !catalogError && filteredCatalog.length === 0 ? (
+                      <div className="catalog-empty"><p>{catalog.length ? "No skills match your filters." : "No curated skills are available."}</p>{catalog.length ? <button onClick={() => { setSearch(""); setCategory("All"); }}>Clear filters</button> : null}</div>
+                    ) : null}
+                    <div className="catalog-list">
+                    {catalogLoading || catalogError ? null : (
+                      filteredCatalog.map((entry) => {
                         const installed = installedSkillIds.has(entry.id);
                         return (
                           <article
                             key={entry.id}
                             data-testid={`catalog-${entry.id}`}
-                            className="rounded-xl border border-neutral-200 p-3.5"
+                            className="catalog-card rounded-xl border border-neutral-200 p-3.5"
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
@@ -527,7 +572,7 @@ export function Dashboard() {
                               </div>
                               <button
                                 type="button"
-                                disabled={previewPending || installed}
+                                disabled={previewPending || installPending || Boolean(undoPending) || !registry || installed}
                                 onClick={() => void previewSource(entry.source)}
                                 className="shrink-0 rounded-lg bg-neutral-950 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
                               >
@@ -538,6 +583,7 @@ export function Dashboard() {
                         );
                       })
                     )}
+                    </div>
                   </div>
                 ) : null}
 
@@ -599,7 +645,7 @@ export function Dashboard() {
                               </div>
                               <button
                                 type="button"
-                                disabled={previewPending || installedSkillIds.has(skill.id)}
+                                disabled={previewPending || installPending || Boolean(undoPending) || !registry || installedSkillIds.has(skill.id)}
                                 onClick={() =>
                                   void previewSource({ url: browseUrl, commit: browseCommit, subdirectory: skill.subdirectory })
                                 }
@@ -658,7 +704,7 @@ export function Dashboard() {
                     </label>
                     <button
                       type="submit"
-                      disabled={previewPending}
+                      disabled={previewPending || installPending || Boolean(undoPending) || !registry}
                       className="w-full rounded-lg bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {previewPending ? "Analyzing…" : "Generate preview"}
@@ -668,22 +714,22 @@ export function Dashboard() {
               </section>
             </div>
 
-            <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+            <section className="review-panel rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm" aria-busy={previewPending || installPending}>
               <SectionHeading
                 eyebrow="Review"
                 title={preview ? `Incoming: ${preview.incomingSkill.name}` : "Conflict evidence & diff"}
                 detail={preview ? `base ${shortCommit(preview.baseCommit)}` : "Generate a preview to inspect the proposed change."}
               />
 
-              {!preview ? (
+              {previewPending ? <div role="status" className="preview-loading"><span className="loading-spinner" /><h3>Preparing your preview</h3><p>Fetching skill files and checking for conflicts. Larger repositories may take a moment.</p><div className="skeleton" /><div className="skeleton" /></div> : !preview ? (
                 <div className="flex min-h-80 items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center">
                   <div>
-                    <p className="text-sm font-medium text-neutral-700">No active preview</p>
-                    <p className="mt-1 text-sm text-neutral-500">Conflict reports, citations, provider metadata, and the selected diff appear here.</p>
+                    <div className="review-illustration" aria-hidden="true"><span>+</span><span>✓</span></div><p className="text-sm font-medium text-neutral-700">No active preview</p>
+                    <p className="mt-1 text-sm text-neutral-500">Choose a skill to review its changes, inspect conflicts, and decide what your agents learn next.</p>
                   </div>
                 </div>
               ) : (
-                <div className="space-y-5">
+                <fieldset disabled={installPending} className="min-w-0 space-y-5 border-0 p-0">
                   {preview.conflicts.length === 0 ? (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
                       No semantic conflict candidate requires model analysis for this import.
@@ -799,12 +845,12 @@ export function Dashboard() {
                       </div>
                     </div>
                   )}
-                </div>
+                </fieldset>
               )}
             </section>
           </div>
 
-          <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <section id="agents" className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
             <SectionHeading
               eyebrow="Behavior proof"
               title="Reloadable demo agents"
@@ -839,7 +885,7 @@ export function Dashboard() {
                           loaded {shortCommit(status?.loadedConfigurationCommit)}
                         </p>
                       </div>
-                      <StatusPill active={!stale}>{stale ? "Stale" : "Current"}</StatusPill>
+                      <StatusPill active={Boolean(status) && !stale}>{!status ? "Unavailable" : stale ? "Stale" : "Current"}</StatusPill>
                     </div>
                     <p className="mt-3 text-xs text-neutral-500">
                       Active skills: {status?.activeSkillIds.join(", ") || "none"}
@@ -877,7 +923,7 @@ export function Dashboard() {
             </div>
           </section>
 
-          <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <section id="history" className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
             <SectionHeading eyebrow="Audit trail" title="Transaction history" detail="Undo always creates a recovery commit." />
             {transactions.length === 0 ? (
               <p className="rounded-xl bg-neutral-50 px-4 py-6 text-center text-sm text-neutral-500">No committed Skill Manager transactions yet.</p>
@@ -904,7 +950,7 @@ export function Dashboard() {
                       {transaction.type === "install" ? (
                         <button
                           type="button"
-                          disabled={alreadyUndone || undoPending === transaction.transactionId}
+                          disabled={alreadyUndone || Boolean(undoPending) || installPending || previewPending}
                           onClick={() => undoTransaction(transaction.transactionId)}
                           className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
                         >

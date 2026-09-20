@@ -1,4 +1,4 @@
-import type { ApiError } from "./contracts";
+import type { ApiError } from "./contracts/common.ts";
 
 export type SkimErrorCode =
   | "INVALID_SOURCE"

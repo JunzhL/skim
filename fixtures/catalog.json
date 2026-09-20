@@ -6,7 +6,10 @@
       "name": "NPM Workflow",
       "description": "Uses npm for JavaScript dependency changes. Conflicts with Package Manager Policy over the shared dependency-management task.",
       "license": "unspecified",
-      "tags": ["dependency-management", "demo"],
+      "tags": [
+        "dependency-management",
+        "demo"
+      ],
       "source": {
         "type": "git",
         "url": "https://github.com/JunzhL/skim.git",
@@ -19,7 +22,10 @@
       "name": "Algorithmic Art",
       "description": "Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Declares no scopes, so it never becomes a conflict candidate.",
       "license": "Apache-2.0",
-      "tags": ["creative", "no-conflict"],
+      "tags": [
+        "creative",
+        "no-conflict"
+      ],
       "source": {
         "type": "git",
         "url": "https://github.com/anthropics/skills.git",
@@ -32,7 +38,9 @@
       "name": "MCP Builder",
       "description": "Guide for creating high-quality MCP servers that let models interact with external services through well-designed tools.",
       "license": "Apache-2.0",
-      "tags": ["tooling"],
+      "tags": [
+        "tooling"
+      ],
       "source": {
         "type": "git",
         "url": "https://github.com/anthropics/skills.git",
@@ -45,12 +53,154 @@
       "name": "Webapp Testing",
       "description": "Toolkit for interacting with and testing local web applications using Playwright, including UI debugging and capture.",
       "license": "Apache-2.0",
-      "tags": ["testing"],
+      "tags": [
+        "testing"
+      ],
       "source": {
         "type": "git",
         "url": "https://github.com/anthropics/skills.git",
         "commit": "34040c9c568585f6929bedeaad110ad08f079624",
         "subdirectory": "skills/webapp-testing"
+      }
+    },
+    {
+      "id": "frontend-design",
+      "name": "Frontend Design",
+      "description": "Design distinctive interfaces with deliberate typography, color, layout, and visual review.",
+      "license": "Apache-2.0",
+      "tags": [
+        "design",
+        "development"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/frontend-design"
+      }
+    },
+    {
+      "id": "canvas-design",
+      "name": "Canvas Design",
+      "description": "Create original visual compositions for posters, artwork, and other static designs.",
+      "license": "Apache-2.0",
+      "tags": [
+        "design",
+        "creative"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/canvas-design"
+      }
+    },
+    {
+      "id": "skill-creator",
+      "name": "Skill Creator",
+      "description": "Create, evaluate, and improve reusable agent skills with structured testing.",
+      "license": "Apache-2.0",
+      "tags": [
+        "tooling",
+        "development"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/skill-creator"
+      }
+    },
+    {
+      "id": "web-artifacts-builder",
+      "name": "Web Artifacts Builder",
+      "description": "Build interactive web artifacts using React, Tailwind CSS, and component libraries.",
+      "license": "Apache-2.0",
+      "tags": [
+        "development"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/web-artifacts-builder"
+      }
+    },
+    {
+      "id": "theme-factory",
+      "name": "Theme Factory",
+      "description": "Apply coordinated colors and typography to slides, documents, and web artifacts.",
+      "license": "Apache-2.0",
+      "tags": [
+        "design"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/theme-factory"
+      }
+    },
+    {
+      "id": "docx",
+      "name": "Word Documents",
+      "description": "Create and edit Word documents, including formatting, tracked changes, and comments.",
+      "license": "Proprietary",
+      "tags": [
+        "documents"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/docx"
+      }
+    },
+    {
+      "id": "pdf",
+      "name": "PDF Toolkit",
+      "description": "Extract, combine, split, and create PDFs, including forms and scanned documents.",
+      "license": "Proprietary",
+      "tags": [
+        "documents"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/pdf"
+      }
+    },
+    {
+      "id": "pptx",
+      "name": "Presentations",
+      "description": "Create and edit PowerPoint decks with layouts, speaker notes, and visual assets.",
+      "license": "Proprietary",
+      "tags": [
+        "documents",
+        "design"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/pptx"
+      }
+    },
+    {
+      "id": "xlsx",
+      "name": "Spreadsheets",
+      "description": "Create and analyze spreadsheets with formulas, formatting, charts, and recalculation.",
+      "license": "Proprietary",
+      "tags": [
+        "documents",
+        "data"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/anthropics/skills.git",
+        "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+        "subdirectory": "skills/xlsx"
       }
     }
   ]
