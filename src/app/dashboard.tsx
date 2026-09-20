@@ -67,6 +67,9 @@ function providerLabel(provider: string): string {
 }
 
 function errorPresentation(error: DashboardErrorState) {
+  if (error.code === "DASHBOARD_REFRESH_FAILED") {
+    return { title: "Refresh failed", tone: "border-amber-300 bg-amber-50 text-amber-950" };
+  }
   if (error.code === "PREVIEW_STALE") {
     return { title: "Stale preview", tone: "border-amber-300 bg-amber-50 text-amber-950" };
   }
@@ -192,6 +195,20 @@ export function Dashboard() {
     setError({ code: failure.code, message: failure.message });
   }
 
+  async function refreshAfterCommit(committedMessage: string) {
+    try {
+      await refreshRepository();
+    } catch (caught) {
+      const failure = caught instanceof DashboardApiError
+        ? caught
+        : new DashboardApiError("DASHBOARD_REFRESH_FAILED", caught instanceof Error ? caught.message : String(caught));
+      setError({
+        code: "DASHBOARD_REFRESH_FAILED",
+        message: `${committedMessage} Refresh the page to load the current repository state. Refresh error: ${failure.message}`,
+      });
+    }
+  }
+
   async function createPreview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPreviewPending(true);
@@ -240,12 +257,19 @@ export function Dashboard() {
       if ("type" in result && result.type === "cancelled") {
         setSuccess("Preview cancelled. No repository commit was created.");
       } else {
-        setSuccess(`Installation committed at ${shortCommit(result.afterCommit)}. Reload agents to pick up the new configuration.`);
-        await refreshRepository();
+        const committedMessage = `Installation committed at ${shortCommit(result.afterCommit)}.`;
+        setSuccess(`${committedMessage} Reload agents to pick up the new configuration.`);
+        setTransactions((current) => [result, ...current]);
+        setPreview(null);
+        setResolution(null);
+        setConfirmationOpen(false);
+        await refreshAfterCommit(committedMessage);
       }
-      setPreview(null);
-      setResolution(null);
-      setConfirmationOpen(false);
+      if (result.type === "cancelled") {
+        setPreview(null);
+        setResolution(null);
+        setConfirmationOpen(false);
+      }
     } catch (caught) {
       presentError(caught);
     } finally {
@@ -296,8 +320,10 @@ export function Dashboard() {
       if (result.type === "conflict") {
         setUndoConflict(result);
       } else {
-        setSuccess(`Undo committed at ${shortCommit(result.transaction.afterCommit)}. Reload agents to observe the restored configuration.`);
-        await refreshRepository();
+        const committedMessage = `Undo committed at ${shortCommit(result.transaction.afterCommit)}.`;
+        setSuccess(`${committedMessage} Reload agents to observe the restored configuration.`);
+        setTransactions((current) => [result.transaction, ...current]);
+        await refreshAfterCommit(committedMessage);
       }
     } catch (caught) {
       presentError(caught);

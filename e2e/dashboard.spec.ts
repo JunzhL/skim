@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { setupDemoRepository } from "../src/lib/demo-setup";
@@ -9,6 +9,9 @@ import { setupDemoRepository } from "../src/lib/demo-setup";
 let root: string;
 let repository: string;
 let server: ChildProcess;
+
+const SOURCE_URL = "https://github.com/JunzhL/skim.git";
+const SOURCE_COMMIT = "7f6a8780bf81bccb04ea88928b1a1314298f59fe";
 
 function waitForExit(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) {
@@ -44,11 +47,30 @@ async function serverIsReachable(): Promise<boolean> {
   }
 }
 
-test.beforeAll(async () => {
-  root = mkdtempSync(join(tmpdir(), "skim-dashboard-e2e-"));
-  repository = setupDemoRepository(join(root, "demo"), {
+async function stopServer(): Promise<void> {
+  if (!server || server.exitCode !== null || server.signalCode !== null) return;
+  server.kill("SIGTERM");
+  await waitForExit(server);
+  await expect.poll(serverIsReachable, { timeout: 5_000 }).toBe(false);
+}
+
+async function startServer(provider: Provider): Promise<void> {
+  repository = setupDemoRepository(join(root, `demo-${provider}`), {
     appRoot: process.cwd(),
   });
+
+  const providerEnvironment = provider === "openai"
+    ? {
+        CONFLICT_MODEL_PROVIDER: "openai",
+        OPENAI_API_KEY: "test-openai-key",
+        OPENAI_MODEL: "mock-openai",
+      }
+    : {
+        CONFLICT_MODEL_PROVIDER: "deepseek",
+        DEEPSEEK_API_KEY: "test-deepseek-key",
+        DEEPSEEK_MODEL: "mock-deepseek",
+      };
+  const fetchMock = resolve("e2e/provider-fetch-mock.mjs");
 
   server = spawn(
     process.execPath,
@@ -67,6 +89,8 @@ test.beforeAll(async () => {
       env: {
         ...process.env,
         SKIM_REPO_PATH: repository,
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${fetchMock}`].filter(Boolean).join(" "),
+        ...providerEnvironment,
       },
       stdio: "ignore",
     },
@@ -86,22 +110,16 @@ test.beforeAll(async () => {
   }
 
   throw new Error("Next.js server did not become ready");
+}
+
+test.beforeAll(async () => {
+  root = mkdtempSync(join(tmpdir(), "skim-dashboard-e2e-"));
+  await startServer("openai");
 });
 
 test.afterAll(async () => {
   try {
-    if (
-      server &&
-      server.exitCode === null &&
-      server.signalCode === null
-    ) {
-      server.kill("SIGTERM");
-      await waitForExit(server);
-    }
-
-    await expect
-      .poll(serverIsReachable, { timeout: 5_000 })
-      .toBe(false);
+    await stopServer();
   } finally {
     if (root) {
       rmSync(root, { recursive: true, force: true });
@@ -159,7 +177,12 @@ function npmSkill(enabled: boolean) {
   };
 }
 
-async function installDashboardMocks(page: Page, provider: Provider, undoConflict = false) {
+async function installDashboardMocks(
+  page: Page,
+  provider: Provider,
+  undoConflict = false,
+  failRefreshAfterMutation = false,
+) {
   let phase: Phase = "initial";
   const loaded: Record<string, string> = { builder: A, reviewer: A };
   let transactions: Array<Record<string, unknown>> = [];
@@ -185,6 +208,9 @@ async function installDashboardMocks(page: Page, provider: Provider, undoConflic
     }
 
     if (method === "GET" && pathname === "/api/transactions") {
+      if (failRefreshAfterMutation && phase !== "initial") {
+        return json(route, { code: "TRANSACTION_UNAVAILABLE", message: "history refresh failed" }, 500);
+      }
       return json(route, { transactions });
     }
 
@@ -315,57 +341,66 @@ async function installDashboardMocks(page: Page, provider: Provider, undoConflic
 }
 
 async function fillPreviewForm(page: Page) {
-  await page.getByLabel("Git URL").fill("https://github.com/example/skills.git");
-  await page.getByLabel("Commit SHA").fill("1".repeat(40));
-  await page.getByLabel("Skill subdirectory").fill("skills/npm-workflow");
+  await page.getByLabel("Git URL").fill(SOURCE_URL);
+  await page.getByLabel("Commit SHA").fill(SOURCE_COMMIT);
+  await page.getByLabel("Skill subdirectory").fill("fixtures/authored-skills/npm-workflow");
   await page.getByRole("button", { name: "Generate preview" }).click();
 }
 
-for (const provider of ["openai", "deepseek"] as const) {
-  test(`runs the full dashboard path with normalized ${provider} conflict output`, async ({ page }) => {
-    await installDashboardMocks(page, provider);
-    await page.goto("/");
+async function runRealDashboardPath(page: Page, provider: Provider) {
+  await page.goto("/");
 
-    await expect(page.getByText("Managed repository connected")).toBeVisible();
-    await expect(page.getByTestId("skill-package-manager-policy")).toContainText("Active");
+  await expect(page.getByText("Managed repository connected")).toBeVisible();
+  await expect(page.getByTestId("skill-package-manager-policy")).toContainText("Active");
 
-    await fillPreviewForm(page);
-    await expect(page.getByText("Adding a JavaScript dependency")).toBeVisible();
-    await expect(page.getByText(provider === "openai" ? "OpenAI · mock-openai" : "DeepSeek · mock-deepseek")).toBeVisible();
-    await expect(page.getByText("use `npm install`")).toBeVisible();
-    await expect(page.getByText("use `pnpm add`")).toBeVisible();
+  await fillPreviewForm(page);
+  await expect(page.getByRole("heading", { name: "Adding a JavaScript dependency", exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(provider === "openai" ? "OpenAI · mock-openai" : "DeepSeek · mock-deepseek")).toBeVisible();
+  await expect(page.getByText(/use `npm install`/)).toBeVisible();
+  await expect(page.getByText(/use `pnpm add`/)).toBeVisible();
 
-    await page.getByRole("button", { name: "Activate incoming" }).click();
-    await expect(page.getByText("diff --git a/agents.yaml b/agents.yaml")).toBeVisible();
-    await page.getByRole("button", { name: "Review resolution" }).click();
-    await page.getByRole("button", { name: "Confirm activate-incoming" }).click();
+  await page.getByRole("button", { name: "Activate incoming" }).click();
+  await expect(page.getByText("diff --git a/agents.yaml b/agents.yaml")).toBeVisible();
+  await page.getByRole("button", { name: "Review resolution" }).click();
+  await page.getByRole("button", { name: "Confirm activate-incoming" }).click();
 
-    await expect(page.getByTestId("skill-npm-workflow")).toContainText("Active");
-    await expect(page.getByTestId("agent-builder")).toContainText("Stale");
-    await expect(page.getByTestId("agent-reviewer")).toContainText("Stale");
+  await expect(page.getByTestId("skill-npm-workflow")).toContainText("Active", { timeout: 60_000 });
+  await expect(page.getByTestId("agent-builder")).toContainText("Stale");
+  await expect(page.getByTestId("agent-reviewer")).toContainText("Stale");
 
-    await page.getByTestId("agent-builder").getByRole("button", { name: "Run" }).click();
-    await expect(page.getByTestId("agent-builder")).toContainText("pnpm add zod");
+  await page.getByTestId("agent-builder").getByRole("button", { name: "Run" }).click();
+  await expect(page.getByTestId("agent-builder")).toContainText("pnpm add zod");
 
-    await page.getByTestId("agent-builder").getByRole("button", { name: "Reload" }).click();
-    await page.getByTestId("agent-reviewer").getByRole("button", { name: "Reload" }).click();
-    await page.getByTestId("agent-builder").getByRole("button", { name: "Run" }).click();
-    await page.getByTestId("agent-reviewer").getByRole("button", { name: "Run" }).click();
-    await expect(page.getByTestId("agent-builder")).toContainText("npm install zod");
-    await expect(page.getByTestId("agent-reviewer")).toContainText("npm install zod");
+  await page.getByTestId("agent-builder").getByRole("button", { name: "Reload" }).click();
+  await page.getByTestId("agent-reviewer").getByRole("button", { name: "Reload" }).click();
+  await page.getByTestId("agent-builder").getByRole("button", { name: "Run" }).click();
+  await page.getByTestId("agent-reviewer").getByRole("button", { name: "Run" }).click();
+  await expect(page.getByTestId("agent-builder")).toContainText("npm install zod");
+  await expect(page.getByTestId("agent-reviewer")).toContainText("npm install zod");
 
-    await page.getByTestId("transaction-tx-dashboard").getByRole("button", { name: "Undo" }).click();
-    await expect(page.getByTestId("skill-package-manager-policy")).toContainText("Active");
-    await expect(page.getByTestId("agent-builder")).toContainText("Stale");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.getByTestId("skill-package-manager-policy")).toContainText("Active", { timeout: 60_000 });
+  await expect(page.getByTestId("agent-builder")).toContainText("Stale");
 
-    await page.getByTestId("agent-builder").getByRole("button", { name: "Reload" }).click();
-    await page.getByTestId("agent-reviewer").getByRole("button", { name: "Reload" }).click();
-    await page.getByTestId("agent-builder").getByRole("button", { name: "Run" }).click();
-    await page.getByTestId("agent-reviewer").getByRole("button", { name: "Run" }).click();
-    await expect(page.getByTestId("agent-builder")).toContainText("pnpm add zod");
-    await expect(page.getByTestId("agent-reviewer")).toContainText("pnpm add zod");
-  });
+  await page.getByTestId("agent-builder").getByRole("button", { name: "Reload" }).click();
+  await page.getByTestId("agent-reviewer").getByRole("button", { name: "Reload" }).click();
+  await page.getByTestId("agent-builder").getByRole("button", { name: "Run" }).click();
+  await page.getByTestId("agent-reviewer").getByRole("button", { name: "Run" }).click();
+  await expect(page.getByTestId("agent-builder")).toContainText("pnpm add zod");
+  await expect(page.getByTestId("agent-reviewer")).toContainText("pnpm add zod");
 }
+
+test("runs the full dashboard path through real APIs with normalized OpenAI output", async ({ page }) => {
+  test.setTimeout(120_000);
+  await runRealDashboardPath(page, "openai");
+});
+
+test("runs the full dashboard path through real APIs with normalized DeepSeek output", async ({ page }) => {
+  test.setTimeout(120_000);
+  await stopServer();
+  await startServer("deepseek");
+  await runRealDashboardPath(page, "deepseek");
+});
 
 test("surfaces stale, provider, and transaction failures with distinct dashboard states", async ({ page }) => {
   let previewFailure: string | null = "MODEL_PROVIDER_CREDENTIALS_MISSING";
@@ -439,6 +474,25 @@ test("surfaces stale, provider, and transaction failures with distinct dashboard
   installFailure = "GIT_FAILED";
   await page.getByRole("button", { name: "Confirm activate-incoming" }).click();
   await expect(page.locator('[data-error-kind="transaction-error"]')).toContainText("Transaction error");
+});
+
+test("preserves committed install and Undo state when history refresh fails", async ({ page }) => {
+  await installDashboardMocks(page, "openai", false, true);
+  await page.goto("/");
+  await fillPreviewForm(page);
+  await page.getByRole("button", { name: "Activate incoming" }).click();
+  await page.getByRole("button", { name: "Review resolution" }).click();
+  await page.getByRole("button", { name: "Confirm activate-incoming" }).click();
+
+  await expect(page.locator('[data-error-kind="refresh-failed"]')).toContainText("Installation committed at bbbbbbbb");
+  await expect(page.getByRole("status")).toContainText("Installation committed at bbbbbbbb");
+  await expect(page.getByTestId("transaction-tx-dashboard")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Confirm activate-incoming" })).toHaveCount(0);
+
+  await page.getByTestId("transaction-tx-dashboard").getByRole("button", { name: "Undo" }).click();
+  await expect(page.locator('[data-error-kind="refresh-failed"]')).toContainText("Undo committed at cccccccc");
+  await expect(page.getByRole("status")).toContainText("Undo committed at cccccccc");
+  await expect(page.getByTestId("transaction-tx-dashboard")).toContainText("Undone");
 });
 
 test("renders an Undo three-way conflict without hiding current repository state", async ({ page }) => {
